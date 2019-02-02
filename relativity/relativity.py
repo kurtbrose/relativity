@@ -1,7 +1,7 @@
 _PAIRING = object()  # marker
 
 
-class Relation(object):
+class M2M(object):
     """
     a dict-like entity that represents a many-to-many relationship
     between two groups of objects
@@ -16,7 +16,7 @@ class Relation(object):
         if type(items) is tuple and items and items[0] is _PAIRING:
             self.inv = items[1]
         else:
-            self.inv = Relation((_PAIRING, self))
+            self.inv = M2M((_PAIRING, self))
             if items:
                 self.update(items)
 
@@ -123,10 +123,10 @@ def _make_row_class(cols):
     return cls
 
 
-_FROM_SLICE = object()  # marker to let RelChain know it is being loaded with a slices
+_FROM_SLICE = object()  # marker to let M2MChain know it is being loaded with a slices
 
 
-class RelChain(object):
+class M2MChain(object):
     """
     Represents a sequence of ManyToMany relationships
 
@@ -144,7 +144,7 @@ class RelChain(object):
             self.cols = cols
             col_pairs = zip(cols[:-1], cols[1:])
             self.data = dict([
-                ((lhs, rhs), Relation()) for lhs, rhs in col_pairs])
+                ((lhs, rhs), M2M()) for lhs, rhs in col_pairs])
         self.rowcls = _make_row_class(self.cols)
 
     def __getitem__(self, key):
@@ -157,7 +157,7 @@ class RelChain(object):
                 if key in self.data:
                     return self.data[key]
                 return self.data[key[1], key[0]].inv
-            # taking a larger slice -- this will return a conjoined RelChain
+            # taking a larger slice -- this will return a conjoined M2MChain
             # check that cols are contiguous and in consistent direction
             first_idx, second_idx = self.cols.index(key[0]), self.cols.index(key[1])
             step = second_idx - first_idx
@@ -173,7 +173,7 @@ class RelChain(object):
                     data[lhs, rhs] = self.data[lhs, rhs]
                 else:
                     data[lhs, rhs] = self.data[rhs, lhs].inv
-            return RelChain(_FROM_SLICE, data, key)
+            return M2MChain(_FROM_SLICE, data, key)
 
     def _all_col(self, col):
         """
@@ -232,7 +232,7 @@ def _join_all(key, nxt, rest, sofar=(), rowcls=tuple):
 
 def _is_connected(graph):
     """
-    given a Relation dict representing a set of edges,
+    given a M2M dict representing a set of edges,
     returns if the graph is fully connected
     """
     to_check = [graph.keys()[0]]
@@ -246,23 +246,22 @@ def _is_connected(graph):
     return reached == (set(graph.keys()) | set(graph.inv.keys()))
 
 
-#TODO rename to RelGraph
-class RelGraph(object):
+class M2MGraph(object):
     """
     represents a graph, where each node is a set of keys,
-    and each edge is a Relation dict connecting two sets
+    and each edge is a M2M dict connecting two sets
     of keys
 
     this is good at representing a web of relationships
     from which various sub relationships can be extracted
     for inspection / modification via [] operator
 
-    the node set is specified as a Relation dict:
+    the node set is specified as a M2M dict:
     {a: b, b: c, b: d} specifies a graph with nodes
     a, b, c, d; and edges (a-b, b-c, b-d)
     """
     def __init__(self, relationships, data=None):
-        relationships = Relation(relationships)
+        relationships = M2M(relationships)
         assert _is_connected(relationships)
         edge_m2m_map = {}
         cols = defaultdict(set)
@@ -274,7 +273,7 @@ class RelGraph(object):
                     edge_m2m_map[lhs, rhs] = data[lhs, rhs]
                 elif (rhs, lhs) in data:
                     edge_m2m_map[lhs, rhs] = data[rhs, lhs].inv
-            edge_m2m_map[lhs, rhs] = Relation()
+            edge_m2m_map[lhs, rhs] = M2M()
             cols[lhs].add((lhs, rhs))
             cols[rhs].add((lhs, rhs))
         self.edge_m2m_map = edge_m2m_map
@@ -282,12 +281,12 @@ class RelGraph(object):
 
     def __getitem__(self, key):
         """
-        return a Relation, RelChain, or RelGraph
+        return a M2M, M2MChain, or M2MGraph
         over the same underlying data structure for easy
         mutation
         """
-        if type(key) is dict or type(key) is Relation:
-            return RelGraph(
+        if type(key) is dict or type(key) is M2M:
+            return M2MGraph(
                 key, 
                 dict([((lhs, rhs), self[lhs, rhs]) for lhs, rhs in key.iteritems()]))
         if type(key) is list:
@@ -305,7 +304,7 @@ class RelGraph(object):
                     raise KeyError("relationship {} not present in graph".format(key))
             else:
                 col_pairs = zip(key[:-1], key[1:])
-                return RelChain(
+                return M2MChain(
                     _FROM_SLICE,
                     dict([(col_pair, self[col_pair]) for col_pair in col_pairs]),
                     key)
@@ -337,7 +336,7 @@ class RelGraph(object):
         pairs = set()
         for path in paths:
             m2ms = self[path]
-            if type(m2ms) is Relation:
+            if type(m2ms) is M2M:
                 pairs.update(m2ms.iteritems())
             else:
                 for row in m2ms:
@@ -436,7 +435,7 @@ class RelGraph(object):
         """add a relationship"""
         assert (to, from_) not in self.edge_m2m_map
         assert from_ in self.cols or to in self.cols
-        assert type(m2m) is Relation
+        assert type(m2m) is M2M
         self.edge_m2m_map[from_, to] = m2m
         if from_ not in self.cols:
             self.cols[from_] = set()
@@ -447,15 +446,15 @@ class RelGraph(object):
 
     def build_chain(self, *cols):
         """
-        build a new RelChain over a set of not neccesarily contiguous
+        build a new M2MChain over a set of not neccesarily contiguous
         columns
 
         relatively expensive because it copies the underlying data structure
         """
-        return RelChain(
+        return M2MChain(
             _FROM_SLICE,
             dict([
-                (col_pair, Relation(self.pairs(col_pair[0], col_pair[1])))
+                (col_pair, M2M(self.pairs(col_pair[0], col_pair[1])))
                 for col_pair in zip(cols[:-1], cols[1:])]),
             cols)
 

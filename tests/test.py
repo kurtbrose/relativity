@@ -2,7 +2,7 @@ from relativity import *
 
 
 def test():
-    m2m = Relation()
+    m2m = M2M()
     m2m.add(1, 'a')
     m2m.add(1, 'b')
     assert m2m[1] == ('a', 'b')
@@ -22,10 +22,10 @@ def test():
     m2m.update([(1, 'a'), (2, 'b')])
     assert m2m.get(2) == ('b',)
     assert m2m.get(3) == ()
-    assert Relation(['ab', 'cd']) == Relation(['ba', 'dc']).inv
-    assert Relation(Relation(['ab', 'cd'])) == Relation(['ab', 'cd'])
+    assert M2M(['ab', 'cd']) == M2M(['ba', 'dc']).inv
+    assert M2M(M2M(['ab', 'cd'])) == M2M(['ab', 'cd'])
 
-    m2ms = RelChain('employee', 'manager', 'director')
+    m2ms = M2MChain('employee', 'manager', 'director')
     m2ms['employee', 'manager'].add('alice', 'bob')
     m2ms['manager', 'director'].add('bob', 'carol')
     m2ms['employee', 'manager'].add('dave', 'bob')
@@ -36,7 +36,7 @@ def test():
         ['eve', 'bob', 'carol'],
     ])
 
-    m2ms = RelChain('letters', 'numbers', 'greek', 'roman')
+    m2ms = M2MChain('letters', 'numbers', 'greek', 'roman')
     m2ms['letters', 'numbers'].add('a', 1)
     m2ms['numbers', 'greek'].add(1, 'alpha')
     m2ms['greek', 'roman'].add('alpha', 'I')
@@ -49,21 +49,21 @@ def test():
         ) == [['a', 1, 'alpha'], ['b', 2, 'beta']]
     assert m2ms['letters'] == ['a', 'b']
 
-    m2mg = RelGraph(
+    m2mg = M2MGraph(
         {'letters': 'numbers', 'roman': 'numbers', 'greek': 'numbers'})
     m2mg['letters', 'numbers'].update([('a', 1), ('b', 2)])
     assert set(m2mg['letters']) == set(['a', 'b'])
     assert list(m2mg['letters', 'numbers', 'roman']) == []
-    assert type(m2mg['letters', 'numbers', 'roman']) is RelChain
-    assert type(m2mg[{'letters': 'numbers', 'greek': 'numbers'}]) is RelGraph
-    RelGraph(m2mg.edge_m2m_map.keys())
+    assert type(m2mg['letters', 'numbers', 'roman']) is M2MChain
+    assert type(m2mg[{'letters': 'numbers', 'greek': 'numbers'}]) is M2MGraph
+    M2MGraph(m2mg.edge_m2m_map.keys())
 
-    m2mg = RelGraph({'roman': 'numbers', 'numbers': 'greek', 'greek': 'roman'})
+    m2mg = M2MGraph({'roman': 'numbers', 'numbers': 'greek', 'greek': 'roman'})
     m2mg['roman', 'numbers'].update([('i', 1), ('v', 5)])
     m2mg['greek', 'numbers'].add('beta', 2)
     assert set(m2mg['numbers']) == set([1, 2, 5])
     assert m2mg.pairs('roman', 'numbers') == set(m2mg['roman', 'numbers'].iteritems())
-    m2mg = RelGraph([('a', 'b'), ('a', 'c'), ('b', 'd'), ('c', 'd')])
+    m2mg = M2MGraph([('a', 'b'), ('a', 'c'), ('b', 'd'), ('c', 'd')])
     m2mg['a', 'b', 'd'].add(1, 2, 3)
     m2mg['a', 'c', 'd'].add('x', 'y', 'z')
     assert m2mg.pairs('a', 'd') == set([(1, 3), ('x', 'z')])
@@ -72,7 +72,7 @@ def test():
     assert 13 in m2mg['b', 'd'][11]
     assert 12 in m2mg['a', 'c'][10]
     assert 13 in m2mg['c', 'd'][12]
-    m2mg.attach(RelGraph([('d', 'e'), ('e', 'f')]))
+    m2mg.attach(M2MGraph([('d', 'e'), ('e', 'f')]))
     m2mg.replace_col('a', {1: 'cat', 10: 'dog', 'x': 'mouse'})
     assert set(m2mg['a']) == set(['cat', 'dog', 'mouse'])
     m2mg.build_chain('a', 'b', 'd')
