@@ -247,7 +247,7 @@ def _is_connected(graph):
 
 
 #TODO rename to RelGraph
-class ManyToManyGraph(object):
+class RelGraph(object):
     """
     represents a graph, where each node is a set of keys,
     and each edge is a Relation dict connecting two sets
@@ -282,12 +282,12 @@ class ManyToManyGraph(object):
 
     def __getitem__(self, key):
         """
-        return a Relation, RelChain, or ManyToManyGraph
+        return a Relation, RelChain, or RelGraph
         over the same underlying data structure for easy
         mutation
         """
         if type(key) is dict or type(key) is Relation:
-            return ManyToManyGraph(
+            return RelGraph(
                 key, 
                 dict([((lhs, rhs), self[lhs, rhs]) for lhs, rhs in key.iteritems()]))
         if type(key) is list:

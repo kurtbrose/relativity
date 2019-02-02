@@ -49,21 +49,21 @@ def test():
         ) == [['a', 1, 'alpha'], ['b', 2, 'beta']]
     assert m2ms['letters'] == ['a', 'b']
 
-    m2mg = ManyToManyGraph(
+    m2mg = RelGraph(
         {'letters': 'numbers', 'roman': 'numbers', 'greek': 'numbers'})
     m2mg['letters', 'numbers'].update([('a', 1), ('b', 2)])
     assert set(m2mg['letters']) == set(['a', 'b'])
     assert list(m2mg['letters', 'numbers', 'roman']) == []
     assert type(m2mg['letters', 'numbers', 'roman']) is RelChain
-    assert type(m2mg[{'letters': 'numbers', 'greek': 'numbers'}]) is ManyToManyGraph
-    ManyToManyGraph(m2mg.edge_m2m_map.keys())
+    assert type(m2mg[{'letters': 'numbers', 'greek': 'numbers'}]) is RelGraph
+    RelGraph(m2mg.edge_m2m_map.keys())
 
-    m2mg = ManyToManyGraph({'roman': 'numbers', 'numbers': 'greek', 'greek': 'roman'})
+    m2mg = RelGraph({'roman': 'numbers', 'numbers': 'greek', 'greek': 'roman'})
     m2mg['roman', 'numbers'].update([('i', 1), ('v', 5)])
     m2mg['greek', 'numbers'].add('beta', 2)
     assert set(m2mg['numbers']) == set([1, 2, 5])
     assert m2mg.pairs('roman', 'numbers') == set(m2mg['roman', 'numbers'].iteritems())
-    m2mg = ManyToManyGraph([('a', 'b'), ('a', 'c'), ('b', 'd'), ('c', 'd')])
+    m2mg = RelGraph([('a', 'b'), ('a', 'c'), ('b', 'd'), ('c', 'd')])
     m2mg['a', 'b', 'd'].add(1, 2, 3)
     m2mg['a', 'c', 'd'].add('x', 'y', 'z')
     assert m2mg.pairs('a', 'd') == set([(1, 3), ('x', 'z')])
@@ -72,7 +72,7 @@ def test():
     assert 13 in m2mg['b', 'd'][11]
     assert 12 in m2mg['a', 'c'][10]
     assert 13 in m2mg['c', 'd'][12]
-    m2mg.attach(ManyToManyGraph([('d', 'e'), ('e', 'f')]))
+    m2mg.attach(RelGraph([('d', 'e'), ('e', 'f')]))
     m2mg.replace_col('a', {1: 'cat', 10: 'dog', 'x': 'mouse'})
     assert set(m2mg['a']) == set(['cat', 'dog', 'mouse'])
     m2mg.build_chain('a', 'b', 'd')
