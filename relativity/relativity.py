@@ -2,7 +2,7 @@ _PAIRING = object()  # marker
 
 
 #TODO: rename to Relation
-class ManyToMany(object):
+class Relation(object):
     """
     a dict-like entity that represents a many-to-many relationship
     between two groups of objects
@@ -17,7 +17,7 @@ class ManyToMany(object):
         if type(items) is tuple and items and items[0] is _PAIRING:
             self.inv = items[1]
         else:
-            self.inv = ManyToMany((_PAIRING, self))
+            self.inv = Relation((_PAIRING, self))
             if items:
                 self.update(items)
 
@@ -146,7 +146,7 @@ class ManyToManySeq(object):
             self.cols = cols
             col_pairs = zip(cols[:-1], cols[1:])
             self.data = dict([
-                ((lhs, rhs), ManyToMany()) for lhs, rhs in col_pairs])
+                ((lhs, rhs), Relation()) for lhs, rhs in col_pairs])
         self.rowcls = _make_row_class(self.cols)
 
     def __getitem__(self, key):
@@ -234,7 +234,7 @@ def _join_all(key, nxt, rest, sofar=(), rowcls=tuple):
 
 def _is_connected(graph):
     """
-    given a ManyToMany dict representing a set of edges,
+    given a Relation dict representing a set of edges,
     returns if the graph is fully connected
     """
     to_check = [graph.keys()[0]]
@@ -252,19 +252,19 @@ def _is_connected(graph):
 class ManyToManyGraph(object):
     """
     represents a graph, where each node is a set of keys,
-    and each edge is a ManyToMany dict connecting two sets
+    and each edge is a Relation dict connecting two sets
     of keys
 
     this is good at representing a web of relationships
     from which various sub relationships can be extracted
     for inspection / modification via [] operator
 
-    the node set is specified as a ManyToMany dict:
+    the node set is specified as a Relation dict:
     {a: b, b: c, b: d} specifies a graph with nodes
     a, b, c, d; and edges (a-b, b-c, b-d)
     """
     def __init__(self, relationships, data=None):
-        relationships = ManyToMany(relationships)
+        relationships = Relation(relationships)
         assert _is_connected(relationships)
         edge_m2m_map = {}
         cols = defaultdict(set)
@@ -276,7 +276,7 @@ class ManyToManyGraph(object):
                     edge_m2m_map[lhs, rhs] = data[lhs, rhs]
                 elif (rhs, lhs) in data:
                     edge_m2m_map[lhs, rhs] = data[rhs, lhs].inv
-            edge_m2m_map[lhs, rhs] = ManyToMany()
+            edge_m2m_map[lhs, rhs] = Relation()
             cols[lhs].add((lhs, rhs))
             cols[rhs].add((lhs, rhs))
         self.edge_m2m_map = edge_m2m_map
@@ -284,11 +284,11 @@ class ManyToManyGraph(object):
 
     def __getitem__(self, key):
         """
-        return a ManyToMany, ManyToManySeq, or ManyToManyGraph
+        return a Relation, ManyToManySeq, or ManyToManyGraph
         over the same underlying data structure for easy
         mutation
         """
-        if type(key) is dict or type(key) is ManyToMany:
+        if type(key) is dict or type(key) is Relation:
             return ManyToManyGraph(
                 key, 
                 dict([((lhs, rhs), self[lhs, rhs]) for lhs, rhs in key.iteritems()]))
@@ -339,7 +339,7 @@ class ManyToManyGraph(object):
         pairs = set()
         for path in paths:
             m2ms = self[path]
-            if type(m2ms) is ManyToMany:
+            if type(m2ms) is Relation:
                 pairs.update(m2ms.iteritems())
             else:
                 for row in m2ms:
@@ -438,7 +438,7 @@ class ManyToManyGraph(object):
         """add a relationship"""
         assert (to, from_) not in self.edge_m2m_map
         assert from_ in self.cols or to in self.cols
-        assert type(m2m) is ManyToMany
+        assert type(m2m) is Relation
         self.edge_m2m_map[from_, to] = m2m
         if from_ not in self.cols:
             self.cols[from_] = set()
@@ -457,7 +457,7 @@ class ManyToManyGraph(object):
         return ManyToManySeq(
             _FROM_SLICE,
             dict([
-                (col_pair, ManyToMany(self.pairs(col_pair[0], col_pair[1])))
+                (col_pair, Relation(self.pairs(col_pair[0], col_pair[1])))
                 for col_pair in zip(cols[:-1], cols[1:])]),
             cols)
 

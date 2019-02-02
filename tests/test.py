@@ -2,7 +2,7 @@ from relativity import *
 
 
 def test():
-    m2m = ManyToMany()
+    m2m = Relation()
     m2m.add(1, 'a')
     m2m.add(1, 'b')
     assert m2m[1] == ('a', 'b')
@@ -22,8 +22,8 @@ def test():
     m2m.update([(1, 'a'), (2, 'b')])
     assert m2m.get(2) == ('b',)
     assert m2m.get(3) == ()
-    assert ManyToMany(['ab', 'cd']) == ManyToMany(['ba', 'dc']).inv
-    assert ManyToMany(ManyToMany(['ab', 'cd'])) == ManyToMany(['ab', 'cd'])
+    assert Relation(['ab', 'cd']) == Relation(['ba', 'dc']).inv
+    assert Relation(Relation(['ab', 'cd'])) == Relation(['ab', 'cd'])
 
     m2ms = ManyToManySeq('employee', 'manager', 'director')
     m2ms['employee', 'manager'].add('alice', 'bob')
