@@ -25,7 +25,7 @@ def test():
     assert Relation(['ab', 'cd']) == Relation(['ba', 'dc']).inv
     assert Relation(Relation(['ab', 'cd'])) == Relation(['ab', 'cd'])
 
-    m2ms = ManyToManySeq('employee', 'manager', 'director')
+    m2ms = RelChain('employee', 'manager', 'director')
     m2ms['employee', 'manager'].add('alice', 'bob')
     m2ms['manager', 'director'].add('bob', 'carol')
     m2ms['employee', 'manager'].add('dave', 'bob')
@@ -36,7 +36,7 @@ def test():
         ['eve', 'bob', 'carol'],
     ])
 
-    m2ms = ManyToManySeq('letters', 'numbers', 'greek', 'roman')
+    m2ms = RelChain('letters', 'numbers', 'greek', 'roman')
     m2ms['letters', 'numbers'].add('a', 1)
     m2ms['numbers', 'greek'].add(1, 'alpha')
     m2ms['greek', 'roman'].add('alpha', 'I')
@@ -54,7 +54,7 @@ def test():
     m2mg['letters', 'numbers'].update([('a', 1), ('b', 2)])
     assert set(m2mg['letters']) == set(['a', 'b'])
     assert list(m2mg['letters', 'numbers', 'roman']) == []
-    assert type(m2mg['letters', 'numbers', 'roman']) is ManyToManySeq
+    assert type(m2mg['letters', 'numbers', 'roman']) is RelChain
     assert type(m2mg[{'letters': 'numbers', 'greek': 'numbers'}]) is ManyToManyGraph
     ManyToManyGraph(m2mg.edge_m2m_map.keys())
 

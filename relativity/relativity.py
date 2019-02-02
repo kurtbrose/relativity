@@ -1,7 +1,6 @@
 _PAIRING = object()  # marker
 
 
-#TODO: rename to Relation
 class Relation(object):
     """
     a dict-like entity that represents a many-to-many relationship
@@ -124,11 +123,10 @@ def _make_row_class(cols):
     return cls
 
 
-_FROM_SLICE = object()  # marker to let ManyToManySeq know it is being loaded with a slices
+_FROM_SLICE = object()  # marker to let RelChain know it is being loaded with a slices
 
 
-#TODO: rename to RelChain
-class ManyToManySeq(object):
+class RelChain(object):
     """
     Represents a sequence of ManyToMany relationships
 
@@ -159,7 +157,7 @@ class ManyToManySeq(object):
                 if key in self.data:
                     return self.data[key]
                 return self.data[key[1], key[0]].inv
-            # taking a larger slice -- this will return a conjoined ManyToManySeq
+            # taking a larger slice -- this will return a conjoined RelChain
             # check that cols are contiguous and in consistent direction
             first_idx, second_idx = self.cols.index(key[0]), self.cols.index(key[1])
             step = second_idx - first_idx
@@ -175,7 +173,7 @@ class ManyToManySeq(object):
                     data[lhs, rhs] = self.data[lhs, rhs]
                 else:
                     data[lhs, rhs] = self.data[rhs, lhs].inv
-            return ManyToManySeq(_FROM_SLICE, data, key)
+            return RelChain(_FROM_SLICE, data, key)
 
     def _all_col(self, col):
         """
@@ -284,7 +282,7 @@ class ManyToManyGraph(object):
 
     def __getitem__(self, key):
         """
-        return a Relation, ManyToManySeq, or ManyToManyGraph
+        return a Relation, RelChain, or ManyToManyGraph
         over the same underlying data structure for easy
         mutation
         """
@@ -307,7 +305,7 @@ class ManyToManyGraph(object):
                     raise KeyError("relationship {} not present in graph".format(key))
             else:
                 col_pairs = zip(key[:-1], key[1:])
-                return ManyToManySeq(
+                return RelChain(
                     _FROM_SLICE,
                     dict([(col_pair, self[col_pair]) for col_pair in col_pairs]),
                     key)
@@ -454,7 +452,7 @@ class ManyToManyGraph(object):
 
         relatively expensive because it copies the underlying data structure
         """
-        return ManyToManySeq(
+        return RelChain(
             _FROM_SLICE,
             dict([
                 (col_pair, Relation(self.pairs(col_pair[0], col_pair[1])))
