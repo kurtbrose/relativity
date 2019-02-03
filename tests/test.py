@@ -76,3 +76,5 @@ def test():
     m2mg.replace_col('a', {1: 'cat', 10: 'dog', 'x': 'mouse'})
     assert set(m2mg['a']) == set(['cat', 'dog', 'mouse'])
     m2mg.build_chain('a', 'b', 'd')
+
+    assert 1 not in m2mg.filtered({'a': lambda v: v >= 10})['a']

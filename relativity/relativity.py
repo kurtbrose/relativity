@@ -458,5 +458,23 @@ class M2MGraph(object):
                 for col_pair in zip(cols[:-1], cols[1:])]),
             cols)
 
+    def filtered(self, filters):
+        """
+        return an M2MGraph with all columns filtered by predicates
+        specified in filters dict
+        """
+        f_copy = M2MGraph(self.edge_m2m_map.keys())
+        for lhs, rhs in self.edge_m2m_map:
+            m2m = self.edge_m2m_map[lhs, rhs]
+            if lhs not in filters and rhs not in filters:
+                f_copy[lhs, rhs].update(m2m)
+                continue
+            dst = f_copy[lhs, rhs]
+            for key, val in m2m.iteritems():
+                if lhs not in filters or filters[lhs](key):
+                    if rhs not in filters or filters[rhs](key):
+                        dst.add(key, val)
+        return f_copy
+
     def __eq__(self, other):
         return type(self) is type(other) and self.edge_m2m_map == other.edge_m2m_map
