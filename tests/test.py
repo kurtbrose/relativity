@@ -78,3 +78,15 @@ def test():
     m2mg.build_chain('a', 'b', 'd')
 
     assert 1 not in m2mg.filtered({'a': lambda v: v >= 10})['a']
+
+    m2mg = M2MGraph(['ab', 'bc'])
+    m2mg['a', 'b'].add(1, 'one')
+    m2mg['b', 'c'].add('one', 'uno')
+    m2mg['a', 'b'].add(2, 'two')
+    m2mg['b', 'c'].add('two', 'dos')
+    print set(m2mg.build_chain('a', 'b', 'c'))
+    assert set(m2mg.build_chain('a', 'b', 'c')) == set([
+        (1, 'one', 'uno'),
+        (2, 'two', 'dos'),
+    ])
+
