@@ -1,6 +1,7 @@
 _PAIRING = object()  # marker
 
 
+# TODO: fill out the rest of dict API and inherit from dict
 class M2M(object):
     """
     a dict-like entity that represents a many-to-many relationship
@@ -322,17 +323,25 @@ class M2MGraph(object):
             sofar.update(m2m.keys())
         return list(sofar)
 
-    def pairs(self, lhs, rhs, paths=None):
+    def pairs(self, lhs, rhs, paths=None, ignore=None):
         """
         get all the unique pairs of values from lhs col and rhs col
-        along paths (if not specified, finds all paths)
+
+        ignore is a set of column names to exclude from building paths
+
+        paths is a list-of-lists of column names; if specified, will
+        follow exactly the chain of relationships specified by
+        each list of column names in paths rather than searching
+        for paths between lhs and rhs columns
         """
         assert lhs in self.cols
         assert rhs in self.cols
+        if ignore is None:
+            ignore = set()
         if paths is None:
-            paths = self._all_paths(lhs, rhs, set())
-        if not paths:
-            raise ValueError('no paths between col {} and {}'.format(lhs, rhs))
+            paths = self._all_paths(lhs, rhs, ignore)
+            if not paths:
+                raise ValueError('no paths between col {} and {}'.format(lhs, rhs))
         pairs = set()
         for path in paths:
             m2ms = self[path]
