@@ -49,8 +49,17 @@ class M2M(object):
     def update(self, iterable):
         """given an iterable of (key, val), add them all"""
         if type(iterable) is type(self):
-            for k in iterable:
-                self[k] = iterable[k]
+            other = iterable
+            for k in other.data:
+                if k not in self.data:
+                    self.data[k] = other.data[k]
+                else:
+                    self.data[k].update(other.data[k])
+            for k in other.inv.data:
+                if k not in self.inv.data:
+                    self.inv.data[k] = other.inv.data[k]
+                else:
+                    self.inv.data[k].update(other.inv.data[k])
         elif hasattr(iterable, 'keys'):
             for k in iterable:
                 self.add(k, iterable[k])
