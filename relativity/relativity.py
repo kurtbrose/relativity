@@ -196,9 +196,9 @@ class M2MChain(object):
         all values for a certain column -- not sure if this should stay or not
         """
         if col == self.cols[-1]:
-            return self.data[self.cols[-2], self.cols[-1]].inv.keys()
+            return list(self.data[self.cols[-2], self.cols[-1]].inv)
         if col == self.cols[0]:
-            return self.data[self.cols[0], self.cols[1]].keys()
+            return list(self.data[self.cols[0], self.cols[1]])
         idx = self.cols.index(col)
         return list(
             set(self.data[self.cols[idx], self.cols[idx + 1]].keys()) +
@@ -251,7 +251,7 @@ def _is_connected(graph):
     given a M2M dict representing a set of edges,
     returns if the graph is fully connected
     """
-    to_check = [graph.keys()[0]]
+    to_check = [list(graph.keys())[0]]
     reached = set(to_check)
     while to_check:
         cur = to_check.pop()
@@ -304,7 +304,7 @@ class M2MGraph(object):
         if type(key) is dict or type(key) is M2M:
             return M2MGraph(
                 key,
-                dict([((lhs, rhs), self[lhs, rhs]) for lhs, rhs in key.iteritems()]))
+                dict([((lhs, rhs), self[lhs, rhs]) for lhs, rhs in key.items()]))
         if type(key) is list:
             key = tuple(key)
         if key in self.cols:

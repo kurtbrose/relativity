@@ -2,14 +2,18 @@
 from relativity import M2M, M2MChain, M2MGraph
 
 
-def test_basic():
+def test_m2m_basic():
     m2m = M2M()
+    assert len(m2m) == 0
+    assert not m2m
     m2m.add(1, 'a')
+    assert m2m
     m2m.add(1, 'b')
-    assert m2m[1] == ('a', 'b')
-    assert m2m.inv['a'] == (1,)
+    assert len(m2m) == 1
+    assert m2m.inv['a'] == frozenset([1])
+
     del m2m.inv['a']
-    assert m2m[1] == ('b',)
+    assert m2m[1] == frozenset(['b'])
     assert 1 in m2m
     del m2m.inv['b']
     assert 1 not in m2m
@@ -21,11 +25,13 @@ def test_basic():
     m2m.remove(2, 'b')
     assert 2 not in m2m
     m2m.update([(1, 'a'), (2, 'b')])
-    assert m2m.get(2) == ('b',)
-    assert m2m.get(3) == ()
+    assert m2m.get(2) == frozenset(['b'])
+    assert m2m.get(3) == frozenset()
     assert M2M(['ab', 'cd']) == M2M(['ba', 'dc']).inv
     assert M2M(M2M(['ab', 'cd'])) == M2M(['ab', 'cd'])
 
+
+def test_m2mchain_basic():
     m2ms = M2MChain('employee', 'manager', 'director')
     m2ms['employee', 'manager'].add('alice', 'bob')
     m2ms['manager', 'director'].add('bob', 'carol')
@@ -44,12 +50,14 @@ def test_basic():
     m2ms['letters', 'numbers'].add('b', 2)
     m2ms['numbers', 'greek'].add(2, 'beta')
     m2ms['greek', 'roman'].add('beta', 'II')
-    assert list(m2ms) == [['a', 1, 'alpha', 'I'], ['b', 2, 'beta', 'II']]
+    assert sorted(m2ms) == [['a', 1, 'alpha', 'I'], ['b', 2, 'beta', 'II']]
 
-    assert list(m2ms['letters', 'numbers', 'greek']
+    assert sorted(m2ms['letters', 'numbers', 'greek']
         ) == [['a', 1, 'alpha'], ['b', 2, 'beta']]
-    assert m2ms['letters'] == ['a', 'b']
+    assert sorted(m2ms['letters']) == ['a', 'b']
 
+
+def test_m2mgraph_basic():
     m2mg = M2MGraph(
         {'letters': 'numbers', 'roman': 'numbers', 'greek': 'numbers'})
     m2mg['letters', 'numbers'].update([('a', 1), ('b', 2)])
@@ -78,15 +86,17 @@ def test_basic():
     assert set(m2mg['a']) == set(['cat', 'dog', 'mouse'])
     m2mg.build_chain('a', 'b', 'd')
 
-    assert 1 not in m2mg.filtered({'a': lambda v: v >= 10})['a']
-
     m2mg = M2MGraph(['ab', 'bc'])
     m2mg['a', 'b'].add(1, 'one')
     m2mg['b', 'c'].add('one', 'uno')
     m2mg['a', 'b'].add(2, 'two')
     m2mg['b', 'c'].add('two', 'dos')
-    print(set(m2mg.build_chain('a', 'b', 'c')))
-    assert set(m2mg.build_chain('a', 'b', 'c')) == set([
+    assert set([tuple(x) for x in m2mg.build_chain('a', 'b', 'c')]) == set([
         (1, 'one', 'uno'),
         (2, 'two', 'dos'),
     ])
+
+
+def test_m2mgraph_filtered():
+    m2mg = M2MGraph(['ab', 'bc'])
+    assert 1 not in m2mg.filtered({'a': lambda v: v >= 10})['a']
