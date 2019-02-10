@@ -17,9 +17,19 @@ class M2M(object):
         if type(items) is tuple and items and items[0] is _PAIRING:
             self.inv = items[1]
         else:
-            self.inv = M2M((_PAIRING, self))
+            self.inv = self.__class__((_PAIRING, self))
             if items:
                 self.update(items)
+        return
+
+    def get(self, key, default=frozenset()):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __getitem__(self, key):
+        return frozenset(self.data[key])
 
     def __setitem__(self, key, vals):
         vals = set(vals)
@@ -30,15 +40,6 @@ class M2M(object):
                 self.remove(key, val)
         for val in vals:
             self.add(key, val)
-
-    def __getitem__(self, key):
-        return tuple(self.data[key])
-
-    def get(self, key, default=()):
-        try:
-            return self[key]
-        except KeyError:
-            return default
 
     def __delitem__(self, key):
         for val in self.data.pop(key):
@@ -60,12 +61,13 @@ class M2M(object):
                     self.inv.data[k] = other.inv.data[k]
                 else:
                     self.inv.data[k].update(other.inv.data[k])
-        elif hasattr(iterable, 'keys'):
-            for k in iterable:
+        elif callable(getattr(iterable, 'keys', None)):
+            for k in iterable.keys():
                 self.add(k, iterable[k])
         else:
             for key, val in iterable:
                 self.add(key, val)
+        return
 
     def add(self, key, val):
         if key not in self.data:
@@ -95,9 +97,6 @@ class M2M(object):
             revset.remove(key)
             revset.add(newkey)
 
-    def __contains__(self, key):
-        return key in self.data
-
     def iteritems(self):
         for key in self.data:
             for val in self.data[key]:
@@ -106,14 +105,21 @@ class M2M(object):
     def keys(self):
         return self.data.keys()
 
+    def __contains__(self, key):
+        return key in self.data
+
     def __iter__(self):
         return self.data.__iter__()
+
+    def __len__(self):
+        return self.data.__len__()
 
     def __eq__(self, other):
         return type(self) == type(other) and self.data == other.data
 
     def __repr__(self):
-        return "{}({})".format(self.__class__.__name__, list(self.iteritems()))
+        cn = self.__class__.__name__
+        return '%s(%r)' % (cn, list(self.iteritems()))
 
 
 import itertools
@@ -195,7 +201,7 @@ class M2MChain(object):
             return self.data[self.cols[0], self.cols[1]].keys()
         idx = self.cols.index(col)
         return list(
-            set(self.data[self.cols[idx], self.cols[idx + 1]].keys()) + 
+            set(self.data[self.cols[idx], self.cols[idx + 1]].keys()) +
             set(self.data[self.cols[idx + 1], self.cols[idx]].inv.keys()))
 
     def __iter__(self):
@@ -214,7 +220,7 @@ class M2MChain(object):
 
     def iter_values(self):
         """
-        as __iter__, but give back results in the form of dicts 
+        as __iter__, but give back results in the form of dicts
         """
         for vals in iter(self):
             yield dict(zip(self.cols, vals))
@@ -297,7 +303,7 @@ class M2MGraph(object):
         """
         if type(key) is dict or type(key) is M2M:
             return M2MGraph(
-                key, 
+                key,
                 dict([((lhs, rhs), self[lhs, rhs]) for lhs, rhs in key.iteritems()]))
         if type(key) is list:
             key = tuple(key)

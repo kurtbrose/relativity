@@ -1,7 +1,8 @@
-from relativity import *
+
+from relativity import M2M, M2MChain, M2MGraph
 
 
-def test():
+def test_basic():
     m2m = M2M()
     m2m.add(1, 'a')
     m2m.add(1, 'b')
@@ -84,9 +85,8 @@ def test():
     m2mg['b', 'c'].add('one', 'uno')
     m2mg['a', 'b'].add(2, 'two')
     m2mg['b', 'c'].add('two', 'dos')
-    print set(m2mg.build_chain('a', 'b', 'c'))
+    print(set(m2mg.build_chain('a', 'b', 'c')))
     assert set(m2mg.build_chain('a', 'b', 'c')) == set([
         (1, 'one', 'uno'),
         (2, 'two', 'dos'),
     ])
-
