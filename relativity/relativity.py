@@ -308,8 +308,6 @@ class M2MGraph(object):
             return M2MGraph(
                 key,
                 dict([((lhs, rhs), self.edge_m2m_map[lhs, rhs]) for lhs, rhs in key.items()]))
-        if type(key) is list:
-            key = tuple(key)
         if key in self.cols:
             return self._all_col(key)
         if type(key) is tuple:
@@ -382,6 +380,9 @@ class M2MGraph(object):
         path to avoid loops
         returns [[str]]
         """
+        return [tuple(path) for path in self._all_paths2(lhs, rhs, already_visited)]
+
+    def _all_paths2(self, lhs, rhs, already_visited):
         if lhs == rhs:
             return [[lhs]]
         paths = []
@@ -391,7 +392,7 @@ class M2MGraph(object):
             if nxt in already_visited:
                 continue
             paths.extend(
-                [[lhs] + sub_path for sub_path in self._all_paths(
+                [[lhs] + sub_path for sub_path in self._all_paths2(
                     nxt, rhs, set([lhs]) | already_visited)])
         return paths
 
