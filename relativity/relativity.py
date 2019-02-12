@@ -324,6 +324,8 @@ class M2MGraph(object):
                     if rkey in self.edge_m2m_map:
                         return self.edge_m2m_map[rkey].inv
                     raise KeyError("relationship {} not present in graph".format(key))
+            elif len(key) == 3 and key[1] is Ellipsis:
+                return self.pairs(key[0], key[2])
             else:
                 col_pairs = zip(key[:-1], key[1:])
                 filtered_col_pairs = []
