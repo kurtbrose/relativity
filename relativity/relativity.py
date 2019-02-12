@@ -128,6 +128,20 @@ import itertools
 class M2MChain(object):
     """
     Represents a sequence of ManyToMany relationships
+
+    Basically, an M2MChain is a compressed representation of a
+    sequence of values across all of it's columns.
+
+    The Chain can be iterated over, yielding all of the unique
+    combinations of values that span each of its relationships.
+
+    The relationships in the Chain can be updated, and the Chain
+    will immediately reflect those updates.
+
+    Chains may share their internal state with M2MGraph, M2Ms, and
+    other M2MChains; in this case updates to objects sharing the
+    same underlying data will immediately be reflected in each
+    other.
     """
     def __init__(self, size, data=None, copy=True):
         if size < 2:
