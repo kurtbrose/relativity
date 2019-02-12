@@ -101,17 +101,79 @@ class RelDB(object):
             raise KeyError()
 
 
-# what is the structure of a ResultSet?
-# (M2M, ((M2M, M2M), (M2M,)),  )
-# tuple of M2Ms -- anything inside a sub tuple = not part of output
-# multi layer sub-tuple = multiple paths
-# BUT, what if tuples are being used as keys?
+def _expand_subpaths(paths):
+    """
+    recursively expand sub-paths into concrete paths
+    """
+    pass
+
+
+def _chk_path(path, database):
+    """
+    recursively check that all columns referenced in the
+    path are in the database, and every relationship
+    implied by sequential columns in the path are in the
+    database
+    """
+    assert type(path) is tuple
+    for seg in path:
+        if type(seg) is list:
+            assert len(seg) > 0
+            _chk_path(tuple(seg))
+            first = seg[0]
+            while type(first) is list:
+                first = first[0]
+            for lp in last_prev:
+                assert (lp, first) in database
+            last = [seg[-1]]
+            for subseg in last:
+
+            while type(last) is list:
+                last = last[-1]
+
+
+
+
+# what is the structure of a Query?
+# (M2M, [[M2M, M2M], [M2M]],  ..., M2M)
+# tuple of M2Ms -- anything inside a list = not part of output
+# multi layer sub-list = multiple paths
+
+# a paths is something like (col, [[col, col], col], ..., col)
+
+class Query(object):
+    """
+    represents an abstract query
+    """
+    __slots__ = ('cols', 'paths', 'database', 'schema_version', 'grouped_by', 'sorted_on')
+
+    def __init__(self, base):
+        if type(base) is Query:
+            self.cols = base.cols
+        if type(base) is list:
+            for col in base:
+                pass
+        # need to be able to construct from a list-of-columns in the base case
+
+    def groupby(self, cols):
+        assert set(cols) < set(self.cols)
+        self.grouped_by = cols
+
+    def sort(self, cols):
+        pass
+
+    def validate(self, database):
+        pass
+
 
 class ResultSet(object):
-    __slots__ = ('rels', 'schema')
+    __slots__ = ('query', 'results')
 
-    def __init__(self, rels, schema):
-        self.rels = rels
+    def __init__(self, query):
+        if query.database.schema.version != query.schema_version:
+            pass  # re-validate that query is still valid
+        # evaluate the query against it's database
+        self.results = fetch()  # ...
 
-
-
+    def __iter__(self):
+        return iter(self.results)
