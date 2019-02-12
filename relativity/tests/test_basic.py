@@ -72,6 +72,7 @@ def test_m2mgraph_basic():
     assert m2mg.pairs('a', 'd') == M2M([(1, 3), ('x', 'z')])
     m2mg.add({'a': 10, 'b': 11, 'c': 12, 'd': 13})
     assert (10, 11) in m2mg['a', 'b']
+    assert (11,) in m2mg['a', 'b'][10,]
     assert (11, 13) in m2mg['b', 'd']
     assert (10, 12) in m2mg['a', 'c']
     assert (12, 13) in m2mg['c', 'd']
