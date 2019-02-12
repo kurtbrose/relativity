@@ -204,20 +204,6 @@ class M2MChain(object):
             set(self.data[self.cols[idx], self.cols[idx + 1]].keys()) +
             set(self.data[self.cols[idx + 1], self.cols[idx]].inv.keys()))
 
-    def __iter__(self):
-        """
-        iterate over all of the possible paths through the
-        chain of many to many dicts
-
-        these are sequences of values, such that a value
-        from M2M N is the key in M2M N+1 across the whole
-        set of M2Ms
-        """
-        col_pairs = zip(self.cols[:-1], self.cols[1:])
-        m2ms = [self.data[pair] for pair in col_pairs]
-        return itertools.chain.from_iterable(
-            [_join_all(key, m2ms[0], m2ms[1:], rowcls=self.rowcls) for key in m2ms[0]])
-
     def iter_values(self):
         """
         as __iter__, but give back results in the form of dicts
@@ -232,6 +218,26 @@ class M2MChain(object):
             zip(vals[:-1], vals[1:]))
         for col_pair, val_pair in col_val_pairs:
             self[col_pair].add(*val_pair)
+
+    def __eq__(self, other):
+        return type(self) is type(other) and self.cols == other.cols and self.data == other.data
+
+    def __repr__(self):
+        return "M2MChain({}, ...)".format(self.cols)
+
+    def __iter__(self):
+        """
+        iterate over all of the possible paths through the
+        chain of many to many dicts
+
+        these are sequences of values, such that a value
+        from M2M N is the key in M2M N+1 across the whole
+        set of M2Ms
+        """
+        col_pairs = zip(self.cols[:-1], self.cols[1:])
+        m2ms = [self.data[pair] for pair in col_pairs]
+        return itertools.chain.from_iterable(
+            [_join_all(key, m2ms[0], m2ms[1:], rowcls=self.rowcls) for key in m2ms[0]])
 
 
 def _join_all(key, nxt, rest, sofar=(), rowcls=tuple):
@@ -320,10 +326,23 @@ class M2MGraph(object):
                     raise KeyError("relationship {} not present in graph".format(key))
             else:
                 col_pairs = zip(key[:-1], key[1:])
-                return M2MChain(
-                    _FROM_SLICE,
-                    dict([(col_pair, self[col_pair]) for col_pair in col_pairs]),
-                    key)
+                filtered_col_pairs = []
+                assert col_pairs[0][0] is not Ellipsis  # ... at the beginning is invalid
+                for lhs_col_pair, rhs_col_pair in zip(col_pairs[:-1], col_pairs[1:]):
+                    if lhs_col_pair[0] is Ellipsis:
+                        continue  # skip, was handled by lhs
+                    if lhs_col_pair[1] is Ellipsis:
+                        assert rhs_col_pair[0] is Ellipsis
+                        # join ... in the middle via pairs
+                        lhslhs, rhsrhs = lhs_col_pair[0], rhs_col_pair[1]
+                        filtered_col_pairs.append(((lhslhs, rhsrhs), self.pairs(lhslhs, rhsrhs)))
+                        continue
+                    filtered_col_pairs.append((lhs_col_pair, self[lhs_col_pair]))
+                assert col_pairs[-1][1] is not Ellipsis  # ... on the end is invalid
+                if col_pairs[-1][0] is not Ellipsis:
+                    filtered_col_pairs.append((col_pairs[-1], self[col_pairs[-1]]))
+                filtered_cols = tuple([k for k in key if k is not Ellipsis])
+                return M2MChain(_FROM_SLICE, dict(filtered_col_pairs), filtered_cols)
         raise KeyError(key)
 
     def _all_col(self, col):
@@ -357,14 +376,14 @@ class M2MGraph(object):
             paths = self._all_paths(lhs, rhs, ignore)
             if not paths:
                 raise ValueError('no paths between col {} and {}'.format(lhs, rhs))
-        pairs = set()
+        pairs = M2M()
         for path in paths:
             m2ms = self[path]
             if type(m2ms) is M2M:
                 pairs.update(m2ms.iteritems())
             else:
                 for row in m2ms:
-                    pairs.add((row[0], row[-1]))
+                    pairs.add(row[0], row[-1])
         return pairs
 
     def _all_paths(self, lhs, rhs, already_visited):
@@ -502,3 +521,9 @@ class M2MGraph(object):
 
     def __eq__(self, other):
         return type(self) is type(other) and self.edge_m2m_map == other.edge_m2m_map
+
+    def __contains__(self, rel):
+        return rel in self.edge_m2m_map
+
+    def __repr__(self):
+        return "M2MGraph({}, ...)".format(self.edge_m2m_map.keys())

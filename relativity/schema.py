@@ -31,7 +31,7 @@ class Schema(object):
         self.col_users = {col: set() for col in cols}
         # relationships / indices / etc that make use of cols
 
-        self.version = 0  # increment this when schema changes are made
+        self.ver = 0  # increment this when schema changes are made
 
     def add_col(self, col):
         """
@@ -99,6 +99,35 @@ class RelDB(object):
         if key is Ellipsis:
             # iterate over all unique tuples in some order?
             raise KeyError()
+
+
+
+class View(object):
+    __slots__ = ('reldb', 'schema_ver')
+    """
+    A View is a live attachement to some subset of the data
+    inside a RelDB; Views allow for more focused read/write APIs
+    """
+# this is only to provide isinstance() checks for users
+
+
+class _RelView(View):
+    """
+    View of a single relationship
+
+    This is basically an M2M.
+    """
+    __slots__ = ('lhs_col', 'rhs_col')
+
+    def __init__(self, reldb, lhs_col, rhs_col):
+        assert lhs_col in reldb.cols
+        assert rhs_col in reldb.cols
+        self.lhs_col, self.rhs_col, self.reldb = lhs_col, rhs_col, reldb
+        self.schema_version = self.reldb.schema.ver
+
+    def add(self, key, val):
+        if key not in self.reldb.
+
 
 
 # what is the structure of a Query?

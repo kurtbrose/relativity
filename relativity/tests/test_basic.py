@@ -71,11 +71,11 @@ def test_m2mgraph_basic():
     m2mg['roman', 'numbers'].update([('i', 1), ('v', 5)])
     m2mg['greek', 'numbers'].add('beta', 2)
     assert set(m2mg['numbers']) == set([1, 2, 5])
-    assert m2mg.pairs('roman', 'numbers') == set(m2mg['roman', 'numbers'].iteritems())
+    assert m2mg.pairs('roman', 'numbers') == M2M(m2mg['roman', 'numbers'].iteritems())
     m2mg = M2MGraph([('a', 'b'), ('a', 'c'), ('b', 'd'), ('c', 'd')])
     m2mg['a', 'b', 'd'].add(1, 2, 3)
     m2mg['a', 'c', 'd'].add('x', 'y', 'z')
-    assert m2mg.pairs('a', 'd') == set([(1, 3), ('x', 'z')])
+    assert m2mg.pairs('a', 'd') == M2M([(1, 3), ('x', 'z')])
     m2mg.add({'a': 10, 'b': 11, 'c': 12, 'd': 13})
     assert 11 in m2mg['a', 'b'][10]
     assert 13 in m2mg['b', 'd'][11]
@@ -85,7 +85,7 @@ def test_m2mgraph_basic():
     m2mg.attach(M2MGraph([('d', 'e'), ('e', 'f')]))
     m2mg.replace_col('a', {1: 'cat', 10: 'dog', 'x': 'mouse'})
     assert set(m2mg['a']) == set(['cat', 'dog', 'mouse'])
-    m2mg.build_chain('a', 'b', 'd')
+    assert m2mg.build_chain('a', 'b', 'd') == m2mg['a', ..., 'b', ..., 'd']
 
     m2mg = M2MGraph(['ab', 'bc'])
     m2mg['a', 'b'].add(1, 'one')
