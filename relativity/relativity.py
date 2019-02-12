@@ -123,20 +123,6 @@ class M2M(object):
 
 
 import itertools
-from collections import namedtuple, OrderedDict, defaultdict
-
-
-_ROW_CLASS_CACHE = OrderedDict()
-
-def _make_row_class(cols):
-    if cols in _ROW_CLASS_CACHE:
-        cls = _ROW_CLASS_CACHE.pop(cols)
-    else:
-        cls = namedtuple('Row', cols)
-    _ROW_CLASS_CACHE[cols] = cls
-    while len(_ROW_CLASS_CACHE) > 10000:
-        _ROW_CLASS_CACHE.popitem()
-    return cls
 
 
 _FROM_SLICE = object()  # marker to let M2MChain know it is being loaded with a slices
@@ -161,7 +147,6 @@ class M2MChain(object):
             col_pairs = zip(cols[:-1], cols[1:])
             self.data = dict([
                 ((lhs, rhs), M2M()) for lhs, rhs in col_pairs])
-        self.rowcls = _make_row_class(self.cols)
 
     def __getitem__(self, key):
         if key in self.cols:
@@ -237,10 +222,10 @@ class M2MChain(object):
         col_pairs = zip(self.cols[:-1], self.cols[1:])
         m2ms = [self.data[pair] for pair in col_pairs]
         return itertools.chain.from_iterable(
-            [_join_all(key, m2ms[0], m2ms[1:], rowcls=self.rowcls) for key in m2ms[0]])
+            [_join_all(key, m2ms[0], m2ms[1:]) for key in m2ms[0]])
 
 
-def _join_all(key, nxt, rest, sofar=(), rowcls=tuple):
+def _join_all(key, nxt, rest, sofar=()):
     if not rest:
         row = []
         while sofar:
@@ -249,7 +234,7 @@ def _join_all(key, nxt, rest, sofar=(), rowcls=tuple):
         row.reverse()
         return [row + [key, val] for val in nxt.get(key)]
     return itertools.chain.from_iterable(
-        [_join_all(val, rest[0], rest[1:], (key, sofar), rowcls) for val in nxt.get(key)])
+        [_join_all(val, rest[0], rest[1:], (key, sofar)) for val in nxt.get(key)])
 
 
 def _is_connected(graph):
@@ -286,7 +271,7 @@ class M2MGraph(object):
         relationships = M2M(relationships)
         assert _is_connected(relationships)
         edge_m2m_map = {}
-        cols = defaultdict(set)
+        cols = M2M()
         for lhs, rhs in relationships.iteritems():
             # check that only one direction is present
             assert lhs not in relationships.get(rhs)
@@ -296,8 +281,8 @@ class M2MGraph(object):
                 elif (rhs, lhs) in data:
                     edge_m2m_map[lhs, rhs] = data[rhs, lhs].inv
             edge_m2m_map[lhs, rhs] = M2M()
-            cols[lhs].add((lhs, rhs))
-            cols[rhs].add((lhs, rhs))
+            cols.add(lhs, (lhs, rhs))
+            cols.add(rhs, (lhs, rhs))
         self.edge_m2m_map = edge_m2m_map
         self.cols = dict(cols)
 
