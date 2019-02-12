@@ -32,29 +32,19 @@ def test_m2m_basic():
 
 
 def test_m2mchain_basic():
-    m2ms = M2MChain('employee', 'manager', 'director')
-    m2ms['employee', 'manager'].add('alice', 'bob')
-    m2ms['manager', 'director'].add('bob', 'carol')
-    m2ms['employee', 'manager'].add('dave', 'bob')
-    m2ms['employee', 'manager'].add('eve', 'bob')
+    m2ms = M2MChain(2)
+    m2ms.add('alice', 'bob')
+    m2ms = M2MChain(3)
+    m2ms[:1].add('alice', 'bob')
+    m2ms[1:].add('bob', 'carol')
+    m2ms[:1].add('dave', 'bob')
+    m2ms[:1].add('eve', 'bob')
     assert sorted(m2ms) == sorted([
         ['alice', 'bob', 'carol'],
         ['dave', 'bob', 'carol'],
         ['eve', 'bob', 'carol'],
     ])
-
-    m2ms = M2MChain('letters', 'numbers', 'greek', 'roman')
-    m2ms['letters', 'numbers'].add('a', 1)
-    m2ms['numbers', 'greek'].add(1, 'alpha')
-    m2ms['greek', 'roman'].add('alpha', 'I')
-    m2ms['letters', 'numbers'].add('b', 2)
-    m2ms['numbers', 'greek'].add(2, 'beta')
-    m2ms['greek', 'roman'].add('beta', 'II')
-    assert sorted(m2ms) == [['a', 1, 'alpha', 'I'], ['b', 2, 'beta', 'II']]
-
-    assert sorted(m2ms['letters', 'numbers', 'greek']
-        ) == [['a', 1, 'alpha'], ['b', 2, 'beta']]
-    assert sorted(m2ms['letters']) == ['a', 'b']
+    assert m2ms[1:] == m2ms[:, 'bob']
 
 
 def test_m2mgraph_basic():
@@ -65,13 +55,13 @@ def test_m2mgraph_basic():
     assert list(m2mg['letters', 'numbers', 'roman']) == []
     assert type(m2mg['letters', 'numbers', 'roman']) is M2MChain
     assert type(m2mg[{'letters': 'numbers', 'greek': 'numbers'}]) is M2MGraph
-    M2MGraph(m2mg.edge_m2m_map.keys())
+    M2MGraph(m2mg.rels)
 
     m2mg = M2MGraph({'roman': 'numbers', 'numbers': 'greek', 'greek': 'roman'})
     m2mg['roman', 'numbers'].update([('i', 1), ('v', 5)])
     m2mg['greek', 'numbers'].add('beta', 2)
     assert set(m2mg['numbers']) == set([1, 2, 5])
-    assert m2mg.pairs('roman', 'numbers') == M2M(m2mg['roman', 'numbers'].iteritems())
+    assert m2mg.pairs('roman', 'numbers') == M2M(m2mg['roman', 'numbers'])
     m2mg = M2MGraph([('a', 'b'), ('a', 'c'), ('b', 'd'), ('c', 'd')])
     m2mg['a', 'b', 'd'].add(1, 2, 3)
     m2mg['a', 'c', 'd'].add('x', 'y', 'z')
@@ -81,18 +71,17 @@ def test_m2mgraph_basic():
     assert 13 in m2mg['b', 'd'][11]
     assert 12 in m2mg['a', 'c'][10]
     assert 13 in m2mg['c', 'd'][12]
-    assert 1 not in m2mg.filtered({'a': lambda v: v >= 10})['a']
     m2mg.attach(M2MGraph([('d', 'e'), ('e', 'f')]))
     m2mg.replace_col('a', {1: 'cat', 10: 'dog', 'x': 'mouse'})
     assert set(m2mg['a']) == set(['cat', 'dog', 'mouse'])
-    assert m2mg.build_chain('a', 'b', 'd') == m2mg['a', ..., 'b', ..., 'd']
+    m2mg['a', ..., 'b', ..., 'd']
 
     m2mg = M2MGraph(['ab', 'bc'])
     m2mg['a', 'b'].add(1, 'one')
     m2mg['b', 'c'].add('one', 'uno')
     m2mg['a', 'b'].add(2, 'two')
     m2mg['b', 'c'].add('two', 'dos')
-    assert set([tuple(x) for x in m2mg.build_chain('a', 'b', 'c')]) == set([
+    assert set([tuple(x) for x in m2mg['a', ..., 'b', ..., 'c']]) == set([
         (1, 'one', 'uno'),
         (2, 'two', 'dos'),
     ])
