@@ -81,6 +81,7 @@ def test_m2mgraph_basic():
     assert 13 in m2mg['b', 'd'][11]
     assert 12 in m2mg['a', 'c'][10]
     assert 13 in m2mg['c', 'd'][12]
+    assert 1 not in m2mg.filtered({'a': lambda v: v >= 10})['a']
     m2mg.attach(M2MGraph([('d', 'e'), ('e', 'f')]))
     m2mg.replace_col('a', {1: 'cat', 10: 'dog', 'x': 'mouse'})
     assert set(m2mg['a']) == set(['cat', 'dog', 'mouse'])
@@ -95,8 +96,3 @@ def test_m2mgraph_basic():
         (1, 'one', 'uno'),
         (2, 'two', 'dos'),
     ])
-
-
-def test_m2mgraph_filtered():
-    m2mg = M2MGraph(['ab', 'bc'])
-    assert 1 not in m2mg.filtered({'a': lambda v: v >= 10})['a']
