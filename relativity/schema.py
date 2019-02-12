@@ -101,72 +101,56 @@ class RelDB(object):
             raise KeyError()
 
 
-def _expand_subpaths(paths):
-    """
-    recursively expand sub-paths into concrete paths
-    """
-    pass
-
-
-def _chk_path(path, database):
-    """
-    recursively check that all columns referenced in the
-    path are in the database, and every relationship
-    implied by sequential columns in the path are in the
-    database
-    """
-    assert type(path) is tuple
-    for seg in path:
-        if type(seg) is list:
-            assert len(seg) > 0
-            _chk_path(tuple(seg))
-            first = seg[0]
-            while type(first) is list:
-                first = first[0]
-            for lp in last_prev:
-                assert (lp, first) in database
-            last = [seg[-1]]
-            for subseg in last:
-
-            while type(last) is list:
-                last = last[-1]
-
-
-
-
 # what is the structure of a Query?
-# (M2M, [[M2M, M2M], [M2M]],  ..., M2M)
+# (M2M, [M2M, M2M],  ..., M2M)
 # tuple of M2Ms -- anything inside a list = not part of output
 # multi layer sub-list = multiple paths
 
-# a paths is something like (col, [[col, col], col], ..., col)
+# a paths is something like (col, [col, col], ..., col)
 
-class Query(object):
+class _Query(object):
     """
-    represents an abstract query
+    represents an abstract query; not intended to be instantied directly,
+    should be created by methods / getitem of DB
     """
-    __slots__ = ('cols', 'paths', 'database', 'schema_version', 'grouped_by', 'sorted_on')
+    __slots__ = ('cols', 'path', 'database', 'schema_version', 'grouped_by', 'sorted_on')
+    # cols - the columns that will be output (must be part of path)
+    # path - the join path through the DB that will be walked
+    # database - the RelDB over which the query will be evaluated
+    # schema_version - integer schema version
+    # grouped_by - subset of cols which will be combined into tuples as keys (?)
+    #       -- an alternative interpretation of grouped_by is anything NOT grouped by must be aggregated,
+    #           perhaps with an implicit / default aggregation being "build a list of"
+    # sorted_on - subset of cols that will be used to sort
 
-    def __init__(self, base):
-        if type(base) is Query:
-            self.cols = base.cols
-        if type(base) is list:
-            for col in base:
-                pass
-        # need to be able to construct from a list-of-columns in the base case
+    def __init__(self, cols, path, database):
+        self.cols, self.path, self.database = cols, path, database
+        self.schema_version = database.schema.version
+        self.grouped_by = self.sorted_on = ()
 
     def groupby(self, cols):
         assert set(cols) < set(self.cols)
-        self.grouped_by = cols
+        assert not set(cols) & set(self.grouped_by)
+        ret = _Query(self.cols, self.path, self.database)
+        ret.grouped_by += cols
+        return ret
 
     def sort(self, cols):
-        pass
+        assert set(cols) < set(self.cols)
+        assert not set(cols) & set(self.sorted_on)
+        ret = _Query(self.cols, self.path, self.database)
+        ret.sorted_on += cols
+        return ret
 
     def validate(self, database):
-        pass
+        assert set(self.cols) <= set(self.path)
 
 
-class ResultSet(object):
+class _ResultSet(object):
+    """
+    a resultset obtained by executing a query; not intended to be constructed
+    directly should be built by a _Query
+    """
     __slots__ = ('query', 'results')
 
     def __init__(self, query):
