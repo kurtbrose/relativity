@@ -142,13 +142,7 @@ class M2MChain(object):
         else:
             self.data = [M2M() for i in range(size - 1)]
 
-    def __getitem__(self, key):
-        if type(key) is slice:
-            data = self.data[key]
-            return M2MChain(len(data) + 1, data, False)
-        if type(key) is not tuple:
-            key = (key,)
-        assert len(key) <= len(self.data)
+    def _roll_lhs(self, key):
         # fold up keys left-to-right
         if key[0] == slice(None, None, None):
             lhs = set(self.data[0])
@@ -163,6 +157,16 @@ class M2MChain(object):
                 if rkey in new_lhs:
                     new_lhs = set([rkey])
             lhs = new_lhs
+        return lhs
+
+    def __getitem__(self, key):
+        if type(key) is slice:
+            data = self.data[key]
+            return M2MChain(len(data) + 1, data, False)
+        if type(key) is not tuple:
+            raise TypeError("expected tuple, not {!r}".format(type(key)))
+        assert len(key) <= len(self.data)
+        lhs = self._roll_lhs(key)
         if len(key) == len(self.data) + 1:
             return lhs
         # build a chain of the remaining columns
@@ -174,6 +178,11 @@ class M2MChain(object):
             m2ms.append(new)
             lhs = new.inv
         return M2MChain(len(m2ms) + 1, m2ms, False)
+
+    def __contains__(self, vals):
+        if type(vals) is not tuple:
+            raise TypeError("expected tuple, not {!r}".format(type(vals)))
+        return bool(self._roll_lhs(vals))
 
     def add(self, *vals):
         assert len(self.data) + 1 == len(vals)

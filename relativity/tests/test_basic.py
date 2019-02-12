@@ -45,6 +45,10 @@ def test_m2mchain_basic():
         ['eve', 'bob', 'carol'],
     ])
     assert m2ms[1:] == m2ms[:, 'bob']
+    assert ('alice',) in m2ms
+    assert ('bob',) in m2ms[1:]
+
+# canonical example: (city, fast food franchise, food type)
 
 
 def test_m2mgraph_basic():
