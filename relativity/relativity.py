@@ -482,15 +482,6 @@ class M2MGraph(object):
             for oldval, newval in valmap.items():
                 m2m.replace(oldval, newval)
 
-    def add_rel(self, from_, to, m2m):
-        """add a relationship"""
-        assert from_ in self.cols or to in self.cols
-        assert type(m2m) is M2M
-        self.edge_m2m_map[from_, to] = m2m
-        self.edge_m2m_map[to, from_] = m2m.inv
-        self.cols.add(from_, (from_, to))
-        self.cols.add(to, (to, from_))
-
     def __eq__(self, other):
         return type(self) is type(other) and self.edge_m2m_map == other.edge_m2m_map
 
