@@ -242,22 +242,6 @@ def _join_all(key, nxt, rest, sofar=()):
         [_join_all(val, rest[0], rest[1:], (key, sofar)) for val in nxt.get(key)])
 
 
-def _is_connected(graph):
-    """
-    given a M2M dict representing a set of edges,
-    returns if the graph is fully connected
-    """
-    to_check = [list(graph.keys())[0]]
-    reached = set(to_check)
-    while to_check:
-        cur = to_check.pop()
-        nxt = (set(graph.get(cur)) | set(graph.inv.get(cur)))
-        nxt -= reached  # avoid loops
-        to_check.extend(nxt)
-        reached.update(nxt)
-    return reached == (set(graph.keys()) | set(graph.inv.keys()))
-
-
 class M2MGraph(object):
     """
     represents a graph, where each node is a set of keys,
@@ -274,7 +258,6 @@ class M2MGraph(object):
     """
     def __init__(self, relationships, data=None):
         relationships = M2M(relationships)
-        assert _is_connected(relationships)
         edge_m2m_map = {}
         cols = M2M()
         rels = []
@@ -337,11 +320,6 @@ class M2MGraph(object):
             raise TypeError("expected tuple, not {!r}".format(type(key)))
         if type(val) is not M2MChain:
             raise TypeError("expected M2MChain for val, not {!r}".format(type(val)))
-        if not(any([kcol in self.cols for kcol in key])):
-            raise ValueError(
-                "assignment would create disconnected columns "
-                "({} does not connect to any existing columns {})".format(
-                    repr(key), repr(self.cols.keys())))
         for colpair, m2m in zip(zip(key[:-1], key[1:]), val.data):
             lhs, rhs = colpair
             self.cols[lhs] = (lhs, rhs)
@@ -458,10 +436,6 @@ class M2MGraph(object):
         if overlaps:
             raise ValueError('relationships are specified by both graphs: {}'.format(
                 ", ".join([tuple(e) for e in overlaps])))
-        # check that columns do overlap
-        if not set(self.cols) & set(other.cols):
-            raise ValueError('graphs are disjoint {}, {}'.format(
-                list(self.cols), list(other.cols)))
         self.edge_m2m_map.update(other.edge_m2m_map)
         for col in other.cols:
             if col in self.cols:
