@@ -224,8 +224,10 @@ class M2MChain(object):
         set of M2Ms
         """
         m2ms = self.data
-        return itertools.chain.from_iterable(
+        rows = itertools.chain.from_iterable(
             [_join_all(key, m2ms[0], m2ms[1:]) for key in m2ms[0]])
+        for row in rows:
+            yield tuple(row)
 
 
 def _join_all(key, nxt, rest, sofar=()):
@@ -295,7 +297,7 @@ class M2MGraph(object):
             cols.add(lhs, (lhs, rhs))
             cols.add(rhs, (rhs, lhs))
         self.edge_m2m_map = edge_m2m_map
-        self.cols = dict(cols)
+        self.cols = cols
         self.rels = rels
 
     def __getitem__(self, key):
@@ -331,10 +333,21 @@ class M2MGraph(object):
         raise KeyError(key)
 
     def __setitem__(self, key, val):
-        if type(key) is tuple:
-            pass
-        else:
-            raise KeyError(key)
+        if type(key) is not tuple:
+            raise TypeError("expected tuple, not {!r}".format(type(key)))
+        if type(val) is not M2MChain:
+            raise TypeError("expected M2MChain for val, not {!r}".format(type(val)))
+        if not(any([kcol in self.cols for kcol in key])):
+            raise ValueError(
+                "assignment would create disconnected columns "
+                "({} does not connect to any existing columns {})".format(
+                    repr(key), repr(self.cols.keys())))
+        for colpair, m2m in zip(zip(key[:-1], key[1:]), val.data):
+            lhs, rhs = colpair
+            self.cols[lhs] = (lhs, rhs)
+            self.cols[rhs] = (rhs, lhs)
+            self.edge_m2m_map[lhs, rhs] = m2m
+            self.edge_m2m_map[rhs, lhs] = m2m.inv
 
     def _all_col(self, col):
         """get all the values for a given column"""
@@ -465,16 +478,12 @@ class M2MGraph(object):
 
     def add_rel(self, from_, to, m2m):
         """add a relationship"""
-        assert (to, from_) not in self.edge_m2m_map
         assert from_ in self.cols or to in self.cols
         assert type(m2m) is M2M
         self.edge_m2m_map[from_, to] = m2m
-        if from_ not in self.cols:
-            self.cols[from_] = set()
-        self.cols[from_].add((from_, to))
-        if to not in self.cols:
-            self.cols[to] = set()
-        self.cols[to].add((from_, to))
+        self.edge_m2m_map[to, from_] = m2m.inv
+        self.cols.add(from_, (from_, to))
+        self.cols.add(to, (to, from_))
 
     def __eq__(self, other):
         return type(self) is type(other) and self.edge_m2m_map == other.edge_m2m_map

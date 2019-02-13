@@ -90,3 +90,9 @@ def test_m2mgraph_basic():
         (1, 'one', 'uno'),
         (2, 'two', 'dos'),
     ])
+    assert ('a', 'c') not in m2mg
+    m2mg['a', 'c'] = m2mg['a', ..., 'c']
+    assert ('a', 'c') in m2mg
+
+
+#TODO: test M2MGraph.add_rel
