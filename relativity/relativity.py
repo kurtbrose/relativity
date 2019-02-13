@@ -125,6 +125,19 @@ class M2M(object):
 import itertools
 
 
+def chain(*rels):
+    """
+    Chain M2Ms or M2MChains together into an M2MChain
+    """
+    m2ms = []
+    for obj in rels:
+        if type(obj) is m2m:
+            m2ms.append(obj)
+        elif type(obj) is M2MChain:
+            m2ms.extend(obj.data)
+    return M2MChain(m2ms, copy=False)
+
+
 class M2MChain(object):
     """
     Represents a sequence of ManyToMany relationships
@@ -143,18 +156,14 @@ class M2MChain(object):
     same underlying data will immediately be reflected in each
     other.
     """
-    def __init__(self, size, data=None, copy=True):
-        if size < 2:
-            raise ValueError('size must be at least 2; got {}'.format(size))
-        if data is not None:
-            if len(data) + 1 != size:
-                raise ValueError('size must = data + 1; vals were {} and {}'.format(size, len(data)))
-            if copy:
-                self.data = [M2M(d) for d in data]
-            else:
-                self.data = data
+    def __init__(self, m2ms, copy=True):
+        for m2m in m2ms:
+            if type(m2m) is not M2M:
+                raise TypeError('can only chain M2Ms, not {}'.format(type(m2m)))
+        if copy:
+            self.data = [M2M(d) for d in m2ms]
         else:
-            self.data = [M2M() for i in range(size - 1)]
+            self.data = m2ms
 
     def _roll_lhs(self, key):
         # fold up keys left-to-right
@@ -176,7 +185,7 @@ class M2MChain(object):
     def __getitem__(self, key):
         if type(key) is slice:
             data = self.data[key]
-            return M2MChain(len(data) + 1, data, False)
+            return M2MChain(data, copy=False)
         if type(key) is not tuple:
             raise TypeError("expected tuple, not {!r}".format(type(key)))
         assert len(key) <= len(self.data)
@@ -191,7 +200,7 @@ class M2MChain(object):
                 new[val] = cur[val]
             m2ms.append(new)
             lhs = new.inv
-        return M2MChain(len(m2ms) + 1, m2ms, False)
+        return M2MChain(m2ms, copy=False)
 
     def __contains__(self, vals):
         if type(vals) is not tuple:
@@ -207,6 +216,13 @@ class M2MChain(object):
     def update(self, vals_seq):
         for vals in vals_seq:
             self.add(*vals)
+
+    def pairs(self, start=0, end=-1):
+        """
+        return pairs between the given indices of data
+        """
+        pairing = M2MChain(self.data[start:end], copy=False)
+        return M2M([(row[0], row[-1]) for row in pairing])
 
     def __eq__(self, other):
         return type(self) is type(other) and self.data == other.data
@@ -283,6 +299,19 @@ class M2MGraph(object):
         self.cols = cols
         self.rels = rels
 
+    @classmethod
+    def from_rel_data_map(cls, rel_data_map):
+        """
+        convert a map of column label relationships to M2Ms
+        into a M2MGraph
+
+        rel_data_map -- { (lhs_col, rhs_col): {lhs_val: rhs_val} }
+        """
+        # TODO: better checking
+        cls(rel_data_map.keys(), rel_data_map)
+
+
+
     def __getitem__(self, key):
         """
         return a M2M, M2MChain, or M2MGraph
@@ -312,7 +341,7 @@ class M2MGraph(object):
             assert col_pairs[-1][1] is not Ellipsis  # ... on the end is invalid
             if col_pairs[-1][0] is not Ellipsis:
                 m2ms.append(self.edge_m2m_map[col_pairs[-1]])
-            return M2MChain(len(m2ms) + 1, m2ms, False)
+            return M2MChain(m2ms, False)
         raise KeyError(key)
 
     def __setitem__(self, key, val):
@@ -406,6 +435,14 @@ class M2MGraph(object):
                 raise ValueError('could not find any relationships for col {}'.format(lhs))
         for key, lval, rval in to_add:
             self[key].add(lval, rval)
+
+    def remove(self, col, val):
+        """
+        given a column label and value, remove that value from
+        all relationships involving that column label
+        """
+        for key in self.cols[col]:
+            del self.edge_m2m_map[val]
 
     def attach(self, other):
         """

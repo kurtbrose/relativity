@@ -32,17 +32,17 @@ def test_m2m_basic():
 
 
 def test_m2mchain_basic():
-    m2ms = M2MChain(2)
+    m2ms = M2MChain([M2M()])
     m2ms.add('alice', 'bob')
-    m2ms = M2MChain(3)
+    m2ms = M2MChain([M2M(), M2M()])
     m2ms[:1].add('alice', 'bob')
     m2ms[1:].add('bob', 'carol')
     m2ms[:1].add('dave', 'bob')
     m2ms[:1].add('eve', 'bob')
     assert sorted(m2ms) == sorted([
-        ['alice', 'bob', 'carol'],
-        ['dave', 'bob', 'carol'],
-        ['eve', 'bob', 'carol'],
+        ('alice', 'bob', 'carol'),
+        ('dave', 'bob', 'carol'),
+        ('eve', 'bob', 'carol'),
     ])
     assert m2ms[1:] == m2ms[:, 'bob']
     assert ('alice',) in m2ms
