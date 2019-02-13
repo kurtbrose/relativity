@@ -444,6 +444,12 @@ class M2MGraph(object):
         and there must be at least one link between the columns
         of self and other
         """
+        if type(other) is dict:
+            relationships = other.keys()
+            for r in relationships:
+                assert type(r) is tuple and len(r) == 2
+            data = {k: M2M(v) for k, v in other.items()}
+            other = M2MGraph(relationships, data)
         assert type(other) is type(self)
         # TODO: allow attaching of sequences?
         # check that relationships do not overlap
