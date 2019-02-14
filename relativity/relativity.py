@@ -131,7 +131,7 @@ def chain(*rels):
     """
     m2ms = []
     for obj in rels:
-        if type(obj) is m2m:
+        if type(obj) is M2M:
             m2ms.append(obj)
         elif type(obj) is M2MChain:
             m2ms.extend(obj.data)
@@ -351,8 +351,8 @@ class M2MGraph(object):
             raise TypeError("expected M2MChain for val, not {!r}".format(type(val)))
         for colpair, m2m in zip(zip(key[:-1], key[1:]), val.data):
             lhs, rhs = colpair
-            self.cols[lhs] = (lhs, rhs)
-            self.cols[rhs] = (rhs, lhs)
+            self.cols.add(lhs, (lhs, rhs))
+            self.cols.add(rhs, (rhs, lhs))
             self.edge_m2m_map[lhs, rhs] = m2m
             self.edge_m2m_map[rhs, lhs] = m2m.inv
 
@@ -474,11 +474,7 @@ class M2MGraph(object):
             raise ValueError('relationships are specified by both graphs: {}'.format(
                 ", ".join([tuple(e) for e in overlaps])))
         self.edge_m2m_map.update(other.edge_m2m_map)
-        for col in other.cols:
-            if col in self.cols:
-                self.cols[col] |= other.cols[col]
-            else:
-                self.cols[col] = other.cols[col]
+        self.cols.update(other.cols)
 
     def replace_col(self, col, valmap):
         """
