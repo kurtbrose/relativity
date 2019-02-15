@@ -1,6 +1,7 @@
 # relativity
 relational python object data structures
 
+## Example
 
 ## Design Philosophy
 ### DB Feature Sets
@@ -40,3 +41,11 @@ In this design space, Relativity offers a relational feature set and nothing els
 Relativity allows you to build in-memory data structures that represent relationships
 among arbitrary Python objects and then execute queries over those objects and
 relationships via a very natural and pythonic API.
+
+
+SQL | Relativity
+--- | ---
+result-set | sets and M2Ms
+join | chain and attach
+order by | sort and sorted
+where-clause | list comprehension

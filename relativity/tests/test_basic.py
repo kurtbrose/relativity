@@ -47,6 +47,14 @@ def test_m2mchain_basic():
     assert m2ms[1:] == m2ms[:, 'bob']
     assert ('alice',) in m2ms
     assert ('bob',) in m2ms[1:]
+    assert 'alice' in m2ms.pairs()
+    # assert 'alice' not in m2ms[1:].pairs()
+    # TODO: decide what pairs() on a chain with only 1 m:m should do
+    m2ms.update([
+        ('april', 'alice', 'anna'),
+        ('brad', 'brent', 'bruce'),
+        ('cathy', 'cynthia', 'claire'),
+        ('dan', 'don', 'dale')])
 
 # canonical example: (city, fast food franchise, food type)
 
