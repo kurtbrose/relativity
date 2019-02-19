@@ -28,6 +28,11 @@ class M2M(object):
         except KeyError:
             return default
 
+    def pop(self, key):
+        val = frozenset(self.data[key])
+        del self[key]
+        return val
+
     def __getitem__(self, key):
         return frozenset(self.data[key])
 
@@ -197,7 +202,8 @@ class M2MChain(object):
         for cur in self.data[len(key) - 1:]:
             new = M2M()
             for val in lhs:
-                new[val] = cur[val]
+                if val in cur:
+                    new[val] = cur[val]
             m2ms.append(new)
             lhs = new.inv
         return M2MChain(m2ms, copy=False)
@@ -217,7 +223,7 @@ class M2MChain(object):
         for vals in vals_seq:
             self.add(*vals)
 
-    def pairs(self, start=0, end=-1):
+    def pairs(self, start=0, end=None):
         """
         return pairs between the given indices of data
         """
