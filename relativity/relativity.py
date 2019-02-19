@@ -442,7 +442,7 @@ class M2MGraph(object):
         all relationships involving that column label
         """
         for key in self.cols[col]:
-            del self.edge_m2m_map[val]
+            del self.edge_m2m_map[key][val]
 
     def attach(self, other):
         """
