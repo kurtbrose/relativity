@@ -4,9 +4,11 @@ from relativity import M2M
 class Table(object):
     def __init__(self, cols, key_cols):
         # TODO: key_cols None means counter / integer rowid
-        self.key_cols, self.cols = key_cols, cols
-        self.rows = {}
+        self.key_cols, self.cols = tuple(key_cols), tuple(cols)
+        self.rows = {}  # should this be dict-of-tuples or tuple-of-dicts?
         self.indices = {}  # {(cols): M2M({col-vals: keys})
+        self.fk_in = []
+        self.fk_out = []
 
     def __getitem__(self, key):
         return key + self.rows[key]
@@ -35,12 +37,19 @@ class Table(object):
             for key, vals in self.rows.iteritems():
                 yield key + vals
 
+    def __contains__(self, key):
+        return key in self.rows
+
     def add_index(self, cols):
-        for col in cols:
-            assert col in self.cols or col in self.key_cols
         assert set(cols) not in [set(icols) for icols in self.indices]
         assert set(cols) != set(self.key_cols)
         self.indices[tuple(cols)] = _Index(self, cols)
+
+    def col_index(self, col):
+        all_col_idx = dict([
+            (c, i) for i, c in
+            enumerate(self.key_cols + self.cols)])
+        return all_col_idx[col]
 
 
 class _Index(object):
@@ -48,8 +57,7 @@ class _Index(object):
     index usable by Table
     """
     def __init__(self, table, cols):
-        all_col_idx = dict([(col, i) for i, col in enumerate(table.key_cols + table.cols)])
-        self.col_idxs = [all_col_idx[col] for col in cols]
+        self.col_idxs = [table.col_index(col) for col in cols]
         self.table, self.cols = table, cols
         self.data = M2M()
         for key in table.rows:
@@ -70,3 +78,49 @@ class _Index(object):
 
     def __getitem__(self, key):
         return self.data[key]
+
+
+CASCADE, PROTECT, NULL = object(), object(), object()
+
+
+class _ForeignKeyConstraint(object):
+    def __init__(self, table, col, target, on_delete=CASCADE):
+        assert on_delete in (CASCADE, PROTECT, NULL)
+        self.col_idx = table.col_index(col)
+        self.table, self.col, self.target = table, col, target
+        self.on_delete = on_delete
+        self.data = M2M()
+        for key in table.rows:
+            self.add_row(key, table.rows[key])
+
+    def add_row(self, key, val):
+        row = key + val
+        fk = row[self.col_idx]
+        self.data.add(fk, key)
+
+    def check_add_row(self, key, val):
+        # should be called before add_row to check
+        # no constraints violated
+        row = key + val
+        fk = row[self.col_idx]
+        assert fk in self.target
+
+    def remove_row(self, key):
+        del self.data.inv[key]
+
+    def check_remove_target_row(self, target_key):
+        if target_key not in self.data:
+            return
+        if self.on_delete is PROTECT:
+            raise ValueError('deleting {} would cause constraint violation')
+        elif self.on_delete is CASCADE:
+            self.table.check_remove_rows(self.data[target_key])
+
+    def remove_target_row(self, target_key):
+        if target_key not in self.data:
+            return
+        if self.on_delete is CASCADE:
+            self.table.remove_rows(self.data[target_key])
+        if self.on_delete is NULL:
+            pass  # reach out to null out cols on table
+    
