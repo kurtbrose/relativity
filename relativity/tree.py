@@ -32,8 +32,12 @@ class M2MTree(object):
             for right in self.right.get(b):
                 pairs.append((a, right))
         elif child is self.right:
-            for left in self.left.get(a):
-                pairs.append((left, b))
+            if type(self.left) is M2MTree:
+                for left in self.left.pairs.inv.get(a):
+                    pairs.append((left, b))
+            else:
+                for left in self.left.inv.get(a):
+                    pairs.append((left, b))
         else:
             raise ValueError('{} is not a child of this tree'.format(child))
         return pairs
@@ -41,7 +45,7 @@ class M2MTree(object):
     def notify_add(self, child, a, b):
         pairs = self._pairs(child, a, b)
         for pair in pairs:
-            if pair not in pair_counts:
+            if pair not in self.pair_counts:
                 self.pair_counts[pair] = 1
                 self.pairs.add(*pair)
                 for parent in self.parents:
@@ -52,7 +56,7 @@ class M2MTree(object):
     def notify_remove(self, child, a, b):
         pairs = self._pairs(child, a, b)
         for pair in pairs:
-            assert pair in pair_counts
+            assert pair in self.pair_counts
             if self.pair_counts[pair] == 1:
                 del self.pair_counts[pair]
                 self.pairs.remove(*pair)
@@ -67,6 +71,12 @@ class M2MTree(object):
     def __getitem__(self, key):
         return self.pairs[key]
 
+    def get(self, key):
+        return self.pairs.get(key)
+
+    def iteritems(self):
+        return self.pairs.iteritems()
+
 
 class TreeIndexer(object):
     """
@@ -76,6 +86,7 @@ class TreeIndexer(object):
     def __init__(self, pair_m2m_map):
         self.pair_m2m_map = pair_m2m_map
         self.tree_map = {}  # {(lhs, rhs): M2MTree}
+        self.parents_of = {m2m: [] for m2m in pair_m2m_map.values()}
 
     def add_index(self, *cols):
         # this would synergize well with find_paths from M2MGraph
@@ -100,7 +111,21 @@ class TreeIndexer(object):
         if len(pairs) < 2:
             assert False, "shouldn't be able to get here"
         ret = self.tree_map[cur_col_pair] = M2MTree(left, right)
+        if left in self.parents_of:
+            self.parents_of[left].append(ret)
+        if right in self.parents_of:
+            self.parents_of[right].append(ret)
         return ret
+
+    def notify_add(self, rel, a, b):
+        m2m = self.pair_m2m_map[rel]
+        for parent in self.parents_of[m2m]:
+            parent.notify_add(m2m, a, b)
+
+    def notify_remove(self, rel, a, b):
+        m2m = self.pair_m2m_map[rel]
+        for parent in self.parents_of[m2m]:
+            parent.notify_remove(m2m, a, b)
 
     def __getitem__(self, pair):
         if pair in self.pair_m2m_map:
