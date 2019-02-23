@@ -84,7 +84,7 @@ offers many features which can be split into four categories:
 - relational data model and queries
 - network protocol and multiple concurrent connections
 - transactions, atomic updates, and MVCC_
-* persistent storage, backups, and read replicas
+- persistent storage, backups, and read replicas
 
 Let's call these "relational", "network", "transactional",
 and "persistence" feature sets.
@@ -132,11 +132,11 @@ among arbitrary Python objects and then execute queries over those objects and
 relationships via a very natural and pythonic API.
 
 
-===================================
-SQL            Relativity
-============   ===================
+=============  ====================
+  SQL            Relativity
+-------------  --------------------
 result-set     sets and M2Ms
 join           chain and attach
 order by       sort and sorted
 where-clause   list comprehension
-===================================
+=============  ====================
