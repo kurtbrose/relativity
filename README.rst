@@ -6,6 +6,17 @@ multi-index data structures
 Motivation
 ----------
 
+We're going to take a mental journey of discovery to see why
+relativity was written, and how you can use it to simplify
+some of the most difficult problems that come up regularly
+when programming.  Rather then leaping straight from programming
+with python's standard data structures to programming with
+relativistic data structures, we'll get a running start
+by programming in a version of python that is missing
+key data structures.  Then, we will draw a line from this
+deficient bad version of python to regular python, and
+then extend that line on into relativity.
+
 Imagine programming without hashmaps.  For example, let's say we have
 a list of ``Restaurant`` objects and ``City`` objects, and we want to
 get how many ``Restaurants`` are in each ``City``.
