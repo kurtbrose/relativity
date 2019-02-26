@@ -83,8 +83,8 @@ multi-index hashmaps.
 
 Returning to the restaurants and cities example, what if
 a restaurant can have multiple locations and we need to
-keep track of how many cities each restaurant is in,
-as well as how many restaurants are in each city.
+keep track of which cities each restaurant is in,
+as well as which restaurants are in each city.
 
 Note that we allow a restaurant to have multiple
 locations within the same city, so sets must be used
@@ -101,11 +101,12 @@ to avoid double counting.
             restaurants_in_city.setdefault(location.city, set()).add(restaurant)
             cities_of_restaurant.setdefault(restaurant, set()).add(location.city)
 
-    def get_restaurant_count(city):
-        return len(restaurants_in_city.get(city, ()))
+    def get_restaurants_in_city(city):
+        return restaurants_in_city.get(city, set())
 
-    def get_city_count(restaurant):
-        return len(cities_of_restaurant.get(restaurant, ()))
+    def get_cities_of_restaurant(restaurant):
+        return cities_of_restaurant.get(restaurant, set())
+
 
 
 Relativity's most basic data structure is a many-to-many
@@ -123,11 +124,8 @@ the problem:
         for location in restaurant.locations:
             restaurant_city_m2m.add(restaurant, location.city)
 
-    def get_restaurant_count(city):
-        return len(restaurant_city_m2m.inv[city])
-
-    def get_city_count(restaurant):
-        return len(restaurant_city_m2m[restaurant])
+    get_restaurants_in_city = restaurant_city_m2m.inv.get
+    get_cities_of_restaurant = restaurant_city_m2m.get
 
 
 Recall that the advantages of having single-index hashmaps
