@@ -149,54 +149,69 @@ lines of code and intermediate values?
 M2M to M2MGraph
 '''''''''''''''
 
-Let's make the restaurant situation more complicated.
-Restaurants locations also have local suppliers.
-Restaurants have parent companies.  Cities have regions.
-We want to be able to query what suppliers are used
-in what region for a given parent company.
+Where relativity really shines is releiving the programmer
+of the burden of keeping data structures consistent with updates.
+Let's consider our restaurant example if we need to be able
+to add and remove locations one at a time and still be able
+to query.
+
+With ``M2M`` objects, the problem is doable, but fiddly to
+implement:
 
 
 .. code-block:: python
 
     restaurant_location = M2M()
-    restaurant_parent_company = M2M()
     location_city = M2M()
-    location_supplier = M2M()
-    city_region = M2M()
 
-    def regional_suppliers(parent_company):
-        supplier_region = M2M()
-        for restaurant in restaurant_parent_company.inv.get(parent_company):
-            for location in restaurant_location[restaurant]:
-                supplier_region.add(
-                    location.supplier,
-                    list(city_region[location.city])[0])
-        return supplier_region
+    def add_location(location):
+        restaurant_location.add(location.restaurant, location)
+        location_city.add(location, location.city)
+
+    def remove_location(location):
+        del location_city[location]
+        del restaurant_location.inv[location]
+
+    def restaurants_in_city(city):
+        restaurants = set()
+        for location in location_city[inv].city:
+            for restaurant in restaurant_location.inv[location]:
+                restaurants.add(restaurant)
+        return restaurant
+
+    def cities_of_restaurant(restaurant):
+        cities = set()
+        for location in restaurant_location[restaurant]:
+            for city in location_city[location]:
+                cities.add(city)
+        return cities
+
+
+This problem can be simplified by stepping up a level of
+abstraction.
+Where ``M2M`` is a data structure of keys and values, ``M2MGraph``
+is a higher-level data structure of ``M2M``s.
+With ``M2MGraph``, this problem becomes simple and
+intuitive:
 
 
 .. code-block:: python
 
-    data = M2MGraph([
-        ('restaurant', 'location'),
-        ('restaurant', 'parent_company'),
-        ('location', 'city'),
-        ('location', 'supplier'),
-        ('city', 'region'),
-    ])
+    data = M2MGraph([('restaurant', 'location'), ('location', 'city')])
 
-    def regional_suppliers(parent_company):
-        locations = data['parent_company', 'restaurant', 'location'][parent_company,].inv.keys()
-        location_suppliers = data['location', 'supplier'].pairs()
-        location_region = data['location', 'city', 'region'].pairs()
-        supplier_region = M2M()
-        for location in locations:
-            supplier = list(location_suppliers[location])[0]
-            region = list(location_region[location][0])
-            supplier_region.add(supplier, region)
-        return supplier_region
+    def add_location(location):
+        data['restaurant', 'location', 'city'].add(
+            location.restaurant, location, location.city)
 
+    def remove_location(location):
+        data.remove('location', location)
 
-NOTE -- these examples are not working too well.
+    def restaurants_in_city(city):
+        return data.pairs('city', 'restaurant').get(city)
+
+    def cities_of_restaurant(restaurant):
+        return data.pairs('restaurant', 'city').get(restaurant)
+
 
 
 Design Philosophy
