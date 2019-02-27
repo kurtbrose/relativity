@@ -190,7 +190,7 @@ implement:
 This problem can be simplified by stepping up a level of
 abstraction.
 Where ``M2M`` is a data structure of keys and values, ``M2MGraph``
-is a higher-level data structure of ``M2M``s.
+is a higher-level data structure of ``M2M`` s.
 With ``M2MGraph``, this problem becomes simple and
 intuitive:
 
