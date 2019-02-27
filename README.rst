@@ -17,6 +17,10 @@ key data structures.  Then, we will draw a line from this
 deficient bad version of python to regular python, and
 then extend that line on into relativity.
 
+
+Dict to List
+''''''''''''
+
 Imagine programming without hashmaps.  For example, let's say we have
 a list of ``Restaurant`` objects and ``City`` objects, and we want to
 get how many ``Restaurants`` are in each ``City``.
@@ -46,11 +50,12 @@ data structure was a list.
     restaurants_in_city = []
 
     for restaurant in restaurants:
+        missing = True
         for idx, city in enumerate(cities):
             if city == restaurant.city:
                 restaurants_in_city[idx] += 1
-                break
-        else:
+                missing = False
+        if missing:
             cities.append(restaurant.city)
             restaurants_in_city.append(1)
 
@@ -73,8 +78,8 @@ Let's leave this dystopian data structure wasteland behind
 for now and go back to regular python.
 
 
-List to Dict to M2M
-'''''''''''''''''''
+Dict to M2M
+'''''''''''
 
 The same differences that showed up when programming with
 and without hashmaps will come up again when comparing
@@ -140,8 +145,58 @@ of abstraction that can represent more complex relationships
 in fewer data structures, and be manipulated with fewer
 lines of code and intermediate values?
 
+
 M2M to M2MGraph
 '''''''''''''''
+
+Let's make the restaurant situation more complicated.
+Restaurants locations also have local suppliers.
+Restaurants have parent companies.  Cities have regions.
+We want to be able to query what suppliers are used
+in what region for a given parent company.
+
+
+.. code-block:: python
+
+    restaurant_location = M2M()
+    restaurant_parent_company = M2M()
+    location_city = M2M()
+    location_supplier = M2M()
+    city_region = M2M()
+
+    def regional_suppliers(parent_company):
+        supplier_region = M2M()
+        for restaurant in restaurant_parent_company.inv.get(parent_company):
+            for location in restaurant_location[restaurant]:
+                supplier_region.add(
+                    location.supplier,
+                    list(city_region[location.city])[0])
+        return supplier_region
+
+
+.. code-block:: python
+
+    data = M2MGraph([
+        ('restaurant', 'location'),
+        ('restaurant', 'parent_company'),
+        ('location', 'city'),
+        ('location', 'supplier'),
+        ('city', 'region'),
+    ])
+
+    def regional_suppliers(parent_company):
+        locations = data['parent_company', 'restaurant', 'location'][parent_company,].inv.keys()
+        location_suppliers = data['location', 'supplier'].pairs()
+        location_region = data['location', 'city', 'region'].pairs()
+        supplier_region = M2M()
+        for location in locations:
+            supplier = list(location_suppliers[location])[0]
+            region = list(location_region[location][0])
+            supplier_region.add(supplier, region)
+        return supplier_region
+
+
+NOTE -- these examples are not working too well.
 
 
 Design Philosophy
