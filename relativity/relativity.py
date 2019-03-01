@@ -179,7 +179,7 @@ class M2MChain(object):
         """
         returns a chain that is filtered so that only keys in keyset are kept
         """
-        keep_m2m = M2M([(k, v) for k, v in self.data[0].iteritems() if k in keepset])
+        keep_m2m = M2M([(k, v) for k, v in self.data[0].iteritems() if k in keyset])
         return M2MChain([keep_m2m] + self.data[1:], copy=False)
 
     def _roll_lhs(self, key):
