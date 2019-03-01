@@ -175,18 +175,10 @@ class M2MChain(object):
         else:
             self.data = m2ms
 
-    def getall(self, keyset):
+    def only(self, keyset):
         """
-        returns the a chain of length n-1,
-        containing all of the elements that are
-        connected to keys in keyset in the leftmost
-        column
+        returns a chain that is filtered so that only keys in keyset are kept
         """
-        if len(self.data) < 2:
-            raise ValueError('must have at least 3 columns')
-        keepset = set()
-        for cur in keyset:
-            keepset |= self.data[0].get(cur)
         keep_m2m = M2M([(k, v) for k, v in self.data[0].iteritems() if k in keepset])
         return M2MChain([keep_m2m] + self.data[1:], copy=False)
 
