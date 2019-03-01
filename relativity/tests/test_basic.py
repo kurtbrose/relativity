@@ -22,7 +22,8 @@ def test_m2m_basic():
     m2m.replace(1, 2)
     assert set(m2m.iteritems()) == set([(2, 'a'), (2, 'b')])
     m2m.remove(2, 'a')
-    m2m.remove(2, 'b')
+    m2m.discard(2, 'b')
+    m2m.discard(2, 'b')
     assert 2 not in m2m
     m2m.update([(1, 'a'), (2, 'b')])
     assert m2m.get(2) == frozenset(['b'])

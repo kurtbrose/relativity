@@ -90,6 +90,11 @@ class M2M(object):
         if not self.inv.data[val]:
             del self.inv.data[val]
 
+    def discard(self, key, val):
+        if key not in self.data or val not in self.inv.data:
+            return
+        self.remove(key, val)
+
     def replace(self, key, newkey):
         """
         replace instances of key by newkey
@@ -170,12 +175,28 @@ class M2MChain(object):
         else:
             self.data = m2ms
 
+    def getall(self, keyset):
+        """
+        returns the a chain of length n-1,
+        containing all of the elements that are
+        connected to keys in keyset in the leftmost
+        column
+        """
+        if len(self.data) < 2:
+            raise ValueError('must have at least 3 columns')
+        keepset = set()
+        for cur in keyset:
+            keepset |= self.data[0].get(cur)
+        keep_m2m = M2M([(k, v) for k, v in self.data[0].iteritems() if k in keepset])
+        return M2MChain([keep_m2m] + self.data[1:], copy=False)
+
     def _roll_lhs(self, key):
         # fold up keys left-to-right
         if key[0] == slice(None, None, None):
-            lhs = set(self.data[0])
+            lhs = self.data[0]
         else:
-            lhs = set([key[0]])
+            lhs = [key[0]]
+        lhs = set(lhs)
         rkey_data = zip(key[1:], self.data)
         for rkey, m2m in rkey_data:
             new_lhs = set()
@@ -220,8 +241,11 @@ class M2MChain(object):
             m2m.add(*val_pair)
 
     def update(self, vals_seq):
-        for vals in vals_seq:
-            self.add(*vals)
+        if len(self.data) == 1 and type(vals_seq) is M2M:
+            self.data[0].update(vals_seq)
+        else:
+            for vals in vals_seq:
+                self.add(*vals)
 
     def pairs(self, start=0, end=None):
         """
@@ -316,8 +340,6 @@ class M2MGraph(object):
         # TODO: better checking
         cls(rel_data_map.keys(), rel_data_map)
 
-
-
     def __getitem__(self, key):
         """
         return a M2M, M2MChain, or M2MGraph
@@ -353,9 +375,15 @@ class M2MGraph(object):
     def __setitem__(self, key, val):
         if type(key) is not tuple:
             raise TypeError("expected tuple, not {!r}".format(type(key)))
-        if type(val) is not M2MChain:
-            raise TypeError("expected M2MChain for val, not {!r}".format(type(val)))
-        for colpair, m2m in zip(zip(key[:-1], key[1:]), val.data):
+        if type(val) is M2M:
+            data = [val]
+        elif type(val) is M2MChain:
+            data = val.data
+        else:
+            raise TypeError("expected M2MChain or M2M for val, not {!r}".format(type(val)))
+        if len(data) != len(key) - 1:
+            raise ValueError("value wrong width ({}) for key {}".format(len(data), key))
+        for colpair, m2m in zip(zip(key[:-1], key[1:]), data):
             lhs, rhs = colpair
             self.cols.add(lhs, (lhs, rhs))
             self.cols.add(rhs, (rhs, lhs))
