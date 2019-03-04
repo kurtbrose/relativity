@@ -1,6 +1,10 @@
 _PAIRING = object()  # marker
 
 
+class _Tmp(object):
+    pass  # just a little trick to avoid __init__ 
+
+
 # TODO: fill out the rest of dict API and inherit from dict
 class M2M(object):
     """
@@ -13,14 +17,21 @@ class M2M(object):
     also, can be used as a directed graph among hashable python objects
     """
     def __init__(self, items=None):
+        self.inv = _Tmp()
+        self.inv.inv = self
+        self.inv.__class__ = self.__class__
+        if items.__class__ is self.__class__:
+            self.data = dict(
+                [(k, set(v)) for k, v in items.data.items()])
+            self.inv.data = dict(
+                [(k, set(v)) for k, v in items.inv.data.items()])
+            return
+            # tolerate a little weirdness here to make M2M(other_m2m)
+            # pythonic copying idiom as fast as possible
         self.data = {}
-        if type(items) is tuple and items and items[0] is _PAIRING:
-            self.inv = items[1]
-        else:
-            self.inv = self.__class__((_PAIRING, self))
-            if items:
-                self.update(items)
-        return
+        self.inv.data = {}
+        if items:
+            self.update(items)
 
     def get(self, key, default=frozenset()):
         try:
@@ -114,6 +125,25 @@ class M2M(object):
 
     def keys(self):
         return self.data.keys()
+
+    def copy(self):
+        """
+        a full copy can be done a lot faster since items don't
+        need to be added one-by-one to sets
+        """
+        clone = _Tmp()
+        clone.inv = _Tmp()
+        clone.data = dict([(k, set(v)) for k, v in self.data.items()])
+        clone.inv.data = dict([(k, set(v)) for k, v in self.inv.data.items()])
+        clone.inv.inv = clone
+        clone.__class__ = clone.inv.__class__ = self.__class__
+        return clone
+
+    __copy__ = copy
+    # NOTE: __copy__ by default will be pretty useless so
+    # it is overridden here; __deepcopy__ is correct by default
+    # because it copies self.data, and all of the sets in self.data
+    # as well as self.inv -- so we don't bother to override the behavior
 
     def __contains__(self, key):
         return key in self.data

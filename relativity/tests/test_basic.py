@@ -1,3 +1,5 @@
+import copy
+
 
 from relativity import M2M, M2MChain, M2MGraph
 
@@ -30,6 +32,21 @@ def test_m2m_basic():
     assert m2m.get(3) == frozenset()
     assert M2M(['ab', 'cd']) == M2M(['ba', 'dc']).inv
     assert M2M(M2M(['ab', 'cd'])) == M2M(['ab', 'cd'])
+
+
+def test_m2m_copy():
+    def _chk_dup(dup_func):
+        m2m = M2M({1:2})
+        other = dup_func(m2m)
+        assert other == m2m
+        m2m.add(1, 3)
+        assert other != m2m
+        assert other[1] != m2m[1]
+
+    _chk_dup(copy.copy)
+    _chk_dup(copy.deepcopy)
+    _chk_dup(M2M)
+    _chk_dup(M2M.copy)
 
 
 def test_m2mchain_basic():

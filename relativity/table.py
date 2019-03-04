@@ -1,11 +1,17 @@
+from itertools import count
+
 from relativity import M2M
 
 
+_next_id = count()
+
 class Table(object):
-    def __init__(self, cols, key_cols):
-        # TODO: key_cols None means counter / integer rowid
-        self.key_cols, self.cols = tuple(key_cols), tuple(cols)
-        self.rows = {}  # should this be dict-of-tuples or tuple-of-dicts?
+    def __init__(self, cols, key_cols=None):
+        self.cols = tuple(cols)
+        if key_cols is None:
+            cols = ('rowid',) + cols
+            key_cols = ('rowid',)
+        self.col_vals = [{} for col in cols]
         self.indices = {}  # {(cols): M2M({col-vals: keys})
         self.fk_in = []
         self.fk_out = []

@@ -24,7 +24,7 @@ GOALS
   * tox
   * travis-ci
   * doctest example
-* documentation
+* docs
   * up-to-date for now; need to build up APIs more
 
 
@@ -33,5 +33,8 @@ COMPLETED
 
 * indexing
   * index data structure
+* consistent, predictable APIs
+  * M2M.copy(), copy.copy(m2m), M2M.__init__()
+    all give decent behaviors now
 * docs
   * simple example that introduces M2M, Graph, and Chain
