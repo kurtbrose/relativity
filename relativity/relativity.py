@@ -131,13 +131,7 @@ class M2M(object):
         a full copy can be done a lot faster since items don't
         need to be added one-by-one to sets
         """
-        clone = _Tmp()
-        clone.inv = _Tmp()
-        clone.data = dict([(k, set(v)) for k, v in self.data.items()])
-        clone.inv.data = dict([(k, set(v)) for k, v in self.inv.data.items()])
-        clone.inv.inv = clone
-        clone.__class__ = clone.inv.__class__ = self.__class__
-        return clone
+        return self.__class__(self)
 
     __copy__ = copy
     # NOTE: __copy__ by default will be pretty useless so
@@ -197,6 +191,8 @@ class M2MChain(object):
     other.
     """
     def __init__(self, m2ms, copy=True):
+        if m2ms.__class__ is self.__class__:
+            m2ms = m2ms.data
         for m2m in m2ms:
             if type(m2m) is not M2M:
                 raise TypeError('can only chain M2Ms, not {}'.format(type(m2m)))
@@ -275,6 +271,11 @@ class M2MChain(object):
         """
         pairing = M2MChain(self.data[start:end], copy=False)
         return M2M([(row[0], row[-1]) for row in pairing])
+
+    def copy(self):
+        return M2MChain(self)
+
+    __copy__ = copy
 
     def __eq__(self, other):
         return type(self) is type(other) and self.data == other.data

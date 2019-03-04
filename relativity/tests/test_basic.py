@@ -51,6 +51,8 @@ def test_m2m_copy():
 
 def test_m2mchain_basic():
     m2ms = M2MChain([M2M()])
+    other = M2MChain(m2ms)
+    assert other == m2ms
     m2ms.add('alice', 'bob')
     m2ms = M2MChain([M2M(), M2M()])
     m2ms[:1].add('alice', 'bob')

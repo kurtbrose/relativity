@@ -36,5 +36,6 @@ COMPLETED
 * consistent, predictable APIs
   * M2M.copy(), copy.copy(m2m), M2M.__init__()
     all give decent behaviors now
+  * M2MChain has good copy semantics
 * docs
   * simple example that introduces M2M, Graph, and Chain
