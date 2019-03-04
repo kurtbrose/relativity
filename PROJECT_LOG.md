@@ -12,13 +12,6 @@ GOALS
   * make it easier to predict what types come out
     * change .data to .m2ms on chain and graph
     * .chain() on graph
-* star / table data structure
-  * where chains are connected left-to-right, stars are
-    connected left-to-left
-    * that is, a star is a list of m2ms where all keys are
-      considered to come from the same domain and all
-      values are considered to come from different domains
-  * stars are iterable: for key in (all-m2m-keys): yield [m2m.get(key)]
 * tests
   * start measuring coverage
   * tox
@@ -37,5 +30,12 @@ COMPLETED
   * M2M.copy(), copy.copy(m2m), M2M.__init__()
     all give decent behaviors now
   * M2MChain has good copy semantics
+* star / table data structure
+  * where chains are connected left-to-right, stars are
+    connected left-to-left
+    * that is, a star is a list of m2ms where all keys are
+      considered to come from the same domain and all
+      values are considered to come from different domains
+  * stars are iterable: for key in (all-m2m-keys): yield [m2m.get(key)]
 * docs
   * simple example that introduces M2M, Graph, and Chain
