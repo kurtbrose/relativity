@@ -284,7 +284,11 @@ class M2MChain(object):
         return "M2MChain({})".format(self.data)
 
     def __nonzero__(self):
-        return bool(zip([False], self))
+        try:
+            next(iter(self))
+            return True
+        except StopIteration:
+            return False
 
     def __iter__(self):
         """
