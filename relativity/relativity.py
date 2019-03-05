@@ -283,6 +283,9 @@ class M2MChain(object):
     def __repr__(self):
         return "M2MChain({})".format(self.data)
 
+    def __nonzero__(self):
+        return bool(zip([False], self))
+
     def __iter__(self):
         """
         iterate over all of the possible paths through the
@@ -341,7 +344,7 @@ class M2MGraph(object):
                 elif (rhs, lhs) in data:
                     edge_m2m_map[lhs, rhs] = data[rhs, lhs].inv
                     edge_m2m_map[rhs, lhs] = data[lhs, rhs]
-                    resl.append((rhs, lhs))
+                    rels.append((rhs, lhs))
             else:
                 rels.append((lhs, rhs))
                 edge_m2m_map[lhs, rhs] = M2M()
