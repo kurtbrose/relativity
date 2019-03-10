@@ -1,6 +1,11 @@
 _PAIRING = object()  # marker
 
 
+class _Tmp(object):
+    pass  # just a little trick to avoid __init__ 
+
+
+# TODO: fill out the rest of dict API and inherit from dict
 class M2M(object):
     """
     a dict-like entity that represents a many-to-many relationship
@@ -12,13 +17,35 @@ class M2M(object):
     also, can be used as a directed graph among hashable python objects
     """
     def __init__(self, items=None):
+        self.inv = _Tmp()
+        self.inv.inv = self
+        self.inv.__class__ = self.__class__
+        if items.__class__ is self.__class__:
+            self.data = dict(
+                [(k, set(v)) for k, v in items.data.items()])
+            self.inv.data = dict(
+                [(k, set(v)) for k, v in items.inv.data.items()])
+            return
+            # tolerate a little weirdness here to make M2M(other_m2m)
+            # pythonic copying idiom as fast as possible
         self.data = {}
-        if type(items) is tuple and items and items[0] is _PAIRING:
-            self.inv = items[1]
-        else:
-            self.inv = M2M((_PAIRING, self))
-            if items:
-                self.update(items)
+        self.inv.data = {}
+        if items:
+            self.update(items)
+
+    def get(self, key, default=frozenset()):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def pop(self, key):
+        val = frozenset(self.data[key])
+        del self[key]
+        return val
+
+    def __getitem__(self, key):
+        return frozenset(self.data[key])
 
     def __setitem__(self, key, vals):
         vals = set(vals)
@@ -30,15 +57,6 @@ class M2M(object):
         for val in vals:
             self.add(key, val)
 
-    def __getitem__(self, key):
-        return tuple(self.data[key])
-
-    def get(self, key, default=()):
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
     def __delitem__(self, key):
         for val in self.data.pop(key):
             self.inv.data[val].remove(key)
@@ -48,14 +66,24 @@ class M2M(object):
     def update(self, iterable):
         """given an iterable of (key, val), add them all"""
         if type(iterable) is type(self):
-            for k in iterable:
-                self[k] = iterable[k]
-        elif hasattr(iterable, 'keys'):
-            for k in iterable:
+            other = iterable
+            for k in other.data:
+                if k not in self.data:
+                    self.data[k] = other.data[k]
+                else:
+                    self.data[k].update(other.data[k])
+            for k in other.inv.data:
+                if k not in self.inv.data:
+                    self.inv.data[k] = other.inv.data[k]
+                else:
+                    self.inv.data[k].update(other.inv.data[k])
+        elif callable(getattr(iterable, 'keys', None)):
+            for k in iterable.keys():
                 self.add(k, iterable[k])
         else:
             for key, val in iterable:
                 self.add(key, val)
+        return
 
     def add(self, key, val):
         if key not in self.data:
@@ -73,6 +101,11 @@ class M2M(object):
         if not self.inv.data[val]:
             del self.inv.data[val]
 
+    def discard(self, key, val):
+        if key not in self.data or val not in self.inv.data:
+            return
+        self.remove(key, val)
+
     def replace(self, key, newkey):
         """
         replace instances of key by newkey
@@ -85,9 +118,6 @@ class M2M(object):
             revset.remove(key)
             revset.add(newkey)
 
-    def __contains__(self, key):
-        return key in self.data
-
     def iteritems(self):
         for key in self.data:
             for val in self.data[key]:
@@ -96,97 +126,169 @@ class M2M(object):
     def keys(self):
         return self.data.keys()
 
+    def copy(self):
+        """
+        a full copy can be done a lot faster since items don't
+        need to be added one-by-one to sets
+        """
+        return self.__class__(self)
+
+    __copy__ = copy
+    # NOTE: __copy__ by default will be pretty useless so
+    # it is overridden here; __deepcopy__ is correct by default
+    # because it copies self.data, and all of the sets in self.data
+    # as well as self.inv -- so we don't bother to override the behavior
+
+    def __contains__(self, key):
+        return key in self.data
+
     def __iter__(self):
         return self.data.__iter__()
+
+    def __len__(self):
+        return self.data.__len__()
 
     def __eq__(self, other):
         return type(self) == type(other) and self.data == other.data
 
     def __repr__(self):
-        return "{}({})".format(self.__class__.__name__, list(self.iteritems()))
+        cn = self.__class__.__name__
+        return '%s(%r)' % (cn, list(self.iteritems()))
 
 
 import itertools
-from collections import namedtuple, OrderedDict, defaultdict
 
 
-_ROW_CLASS_CACHE = OrderedDict()
-
-def _make_row_class(cols):
-    if cols in _ROW_CLASS_CACHE:
-        cls = _ROW_CLASS_CACHE.pop(cols)
-    else:
-        cls = namedtuple('Row', cols)
-    _ROW_CLASS_CACHE[cols] = cls
-    while len(_ROW_CLASS_CACHE) > 10000:
-        _ROW_CLASS_CACHE.popitem()
-    return cls
-
-
-_FROM_SLICE = object()  # marker to let M2MChain know it is being loaded with a slices
+def chain(*rels):
+    """
+    Chain M2Ms or M2MChains together into an M2MChain
+    """
+    m2ms = []
+    for obj in rels:
+        if type(obj) is M2M:
+            m2ms.append(obj)
+        elif type(obj) is M2MChain:
+            m2ms.extend(obj.data)
+    return M2MChain(m2ms, copy=False)
 
 
 class M2MChain(object):
     """
     Represents a sequence of ManyToMany relationships
 
-    Constructed with an ordered sequence of columns,
-    relationships between values of those columns are stored.
+    Basically, an M2MChain is a compressed representation of a
+    sequence of values across all of it's columns.
+
+    The Chain can be iterated over, yielding all of the unique
+    combinations of values that span each of its relationships.
+
+    The relationships in the Chain can be updated, and the Chain
+    will immediately reflect those updates.
+
+    Chains may share their internal state with M2MGraph, M2Ms, and
+    other M2MChains; in this case updates to objects sharing the
+    same underlying data will immediately be reflected in each
+    other.
     """
-    def __init__(self, *cols):
-        if len(cols) < 2:
-            raise ValueError('need at least two columns; got {}'.format(cols))
-        if cols[0] is _FROM_SLICE:
-            self.data, self.cols = cols[1:]
+    def __init__(self, m2ms, copy=True):
+        if m2ms.__class__ is self.__class__:
+            m2ms = m2ms.data
+        for m2m in m2ms:
+            if type(m2m) is not M2M:
+                raise TypeError('can only chain M2Ms, not {}'.format(type(m2m)))
+        if copy:
+            self.data = [M2M(d) for d in m2ms]
         else:
-            if len(set(cols)) != len(cols):
-                raise ValueError('column names must be unique')
-            self.cols = cols
-            col_pairs = zip(cols[:-1], cols[1:])
-            self.data = dict([
-                ((lhs, rhs), M2M()) for lhs, rhs in col_pairs])
-        self.rowcls = _make_row_class(self.cols)
+            self.data = m2ms
+
+    def only(self, keyset):
+        """
+        returns a chain that is filtered so that only keys in keyset are kept
+        """
+        keep_m2m = M2M([(k, v) for k, v in self.data[0].iteritems() if k in keyset])
+        return M2MChain([keep_m2m] + self.data[1:], copy=False)
+
+    def _roll_lhs(self, key):
+        # fold up keys left-to-right
+        if key[0] == slice(None, None, None):
+            lhs = self.data[0]
+        else:
+            lhs = [key[0]]
+        lhs = set(lhs)
+        rkey_data = zip(key[1:], self.data)
+        for rkey, m2m in rkey_data:
+            new_lhs = set()
+            for lkey in lhs:
+                new_lhs |= m2m[lkey]
+            if rkey != slice(None, None, None):
+                if rkey in new_lhs:
+                    new_lhs = set([rkey])
+            lhs = new_lhs
+        return lhs
 
     def __getitem__(self, key):
-        if key in self.cols:
-            # if selecting a single column, give back all the unique values
-            # for that column
-            return self._all_col(key)
-        if type(key) is tuple:
-            if len(key) == 2:
-                if key in self.data:
-                    return self.data[key]
-                return self.data[key[1], key[0]].inv
-            # taking a larger slice -- this will return a conjoined M2MChain
-            # check that cols are contiguous and in consistent direction
-            first_idx, second_idx = self.cols.index(key[0]), self.cols.index(key[1])
-            step = second_idx - first_idx
-            assert step in (1, -1)
-            cur_idx = second_idx
-            for col in key[2:]:
-                last_idx, cur_idx = cur_idx, self.cols.index(col)
-                assert cur_idx - last_idx == step
-            col_pairs = zip(key[:-1], key[1:])
-            data = {}
-            for lhs, rhs in col_pairs:
-                if step == 1:
-                    data[lhs, rhs] = self.data[lhs, rhs]
-                else:
-                    data[lhs, rhs] = self.data[rhs, lhs].inv
-            return M2MChain(_FROM_SLICE, data, key)
+        if type(key) is slice:
+            data = self.data[key]
+            return M2MChain(data, copy=False)
+        if type(key) is not tuple:
+            raise TypeError("expected tuple, not {!r}".format(type(key)))
+        assert len(key) <= len(self.data)
+        lhs = self._roll_lhs(key)
+        if len(key) == len(self.data) + 1:
+            return lhs
+        # build a chain of the remaining columns
+        m2ms = []
+        for cur in self.data[len(key) - 1:]:
+            new = M2M()
+            for val in lhs:
+                if val in cur:
+                    new[val] = cur[val]
+            m2ms.append(new)
+            lhs = new.inv
+        return M2MChain(m2ms, copy=False)
 
-    def _all_col(self, col):
+    def __contains__(self, vals):
+        if type(vals) is not tuple:
+            raise TypeError("expected tuple, not {!r}".format(type(vals)))
+        return bool(self._roll_lhs(vals))
+
+    def add(self, *vals):
+        assert len(self.data) + 1 == len(vals)
+        val_pairs = zip(vals[:-1], vals[1:])
+        for m2m, val_pair in zip(self.data, val_pairs):
+            m2m.add(*val_pair)
+
+    def update(self, vals_seq):
+        if len(self.data) == 1 and type(vals_seq) is M2M:
+            self.data[0].update(vals_seq)
+        else:
+            for vals in vals_seq:
+                self.add(*vals)
+
+    def pairs(self, start=0, end=None):
         """
-        all values for a certain column -- not sure if this should stay or not
+        return pairs between the given indices of data
         """
-        if col == self.cols[-1]:
-            return self.data[self.cols[-2], self.cols[-1]].inv.keys()
-        if col == self.cols[0]:
-            return self.data[self.cols[0], self.cols[1]].keys()
-        idx = self.cols.index(col)
-        return list(
-            set(self.data[self.cols[idx], self.cols[idx + 1]].keys()) + 
-            set(self.data[self.cols[idx + 1], self.cols[idx]].inv.keys()))
+        pairing = M2MChain(self.data[start:end], copy=False)
+        return M2M([(row[0], row[-1]) for row in pairing])
+
+    def copy(self):
+        return M2MChain(self)
+
+    __copy__ = copy
+
+    def __eq__(self, other):
+        return type(self) is type(other) and self.data == other.data
+
+    def __repr__(self):
+        return "M2MChain({})".format(self.data)
+
+    def __nonzero__(self):
+        try:
+            next(iter(self))
+            return True
+        except StopIteration:
+            return False
 
     def __iter__(self):
         """
@@ -197,28 +299,14 @@ class M2MChain(object):
         from M2M N is the key in M2M N+1 across the whole
         set of M2Ms
         """
-        col_pairs = zip(self.cols[:-1], self.cols[1:])
-        m2ms = [self.data[pair] for pair in col_pairs]
-        return itertools.chain.from_iterable(
-            [_join_all(key, m2ms[0], m2ms[1:], rowcls=self.rowcls) for key in m2ms[0]])
-
-    def iter_values(self):
-        """
-        as __iter__, but give back results in the form of dicts 
-        """
-        for vals in iter(self):
-            yield dict(zip(self.cols, vals))
-
-    def add(self, *vals):
-        assert len(self.cols) == len(vals)
-        col_val_pairs = zip(
-            zip(self.cols[:-1], self.cols[1:]),
-            zip(vals[:-1], vals[1:]))
-        for col_pair, val_pair in col_val_pairs:
-            self[col_pair].add(*val_pair)
+        m2ms = self.data
+        rows = itertools.chain.from_iterable(
+            [_join_all(key, m2ms[0], m2ms[1:]) for key in m2ms[0]])
+        for row in rows:
+            yield tuple(row)
 
 
-def _join_all(key, nxt, rest, sofar=(), rowcls=tuple):
+def _join_all(key, nxt, rest, sofar=()):
     if not rest:
         row = []
         while sofar:
@@ -227,23 +315,7 @@ def _join_all(key, nxt, rest, sofar=(), rowcls=tuple):
         row.reverse()
         return [row + [key, val] for val in nxt.get(key)]
     return itertools.chain.from_iterable(
-        [_join_all(val, rest[0], rest[1:], (key, sofar), rowcls) for val in nxt.get(key)])
-
-
-def _is_connected(graph):
-    """
-    given a M2M dict representing a set of edges,
-    returns if the graph is fully connected
-    """
-    to_check = [graph.keys()[0]]
-    reached = set(to_check)
-    while to_check:
-        cur = to_check.pop()
-        nxt = (set(graph.get(cur)) | set(graph.inv.get(cur)))
-        nxt -= reached  # avoid loops
-        to_check.extend(nxt)
-        reached.update(nxt)
-    return reached == (set(graph.keys()) | set(graph.inv.keys()))
+        [_join_all(val, rest[0], rest[1:], (key, sofar)) for val in nxt.get(key)])
 
 
 class M2MGraph(object):
@@ -262,22 +334,41 @@ class M2MGraph(object):
     """
     def __init__(self, relationships, data=None):
         relationships = M2M(relationships)
-        assert _is_connected(relationships)
         edge_m2m_map = {}
-        cols = defaultdict(set)
+        cols = M2M()
+        rels = []
         for lhs, rhs in relationships.iteritems():
             # check that only one direction is present
             assert lhs not in relationships.get(rhs)
             if data:
                 if (lhs, rhs) in data:
                     edge_m2m_map[lhs, rhs] = data[lhs, rhs]
+                    edge_m2m_map[rhs, lhs] = data[lhs, rhs].inv
+                    rels.append((lhs, rhs))
                 elif (rhs, lhs) in data:
                     edge_m2m_map[lhs, rhs] = data[rhs, lhs].inv
-            edge_m2m_map[lhs, rhs] = M2M()
-            cols[lhs].add((lhs, rhs))
-            cols[rhs].add((lhs, rhs))
+                    edge_m2m_map[rhs, lhs] = data[lhs, rhs]
+                    rels.append((rhs, lhs))
+            else:
+                rels.append((lhs, rhs))
+                edge_m2m_map[lhs, rhs] = M2M()
+                edge_m2m_map[rhs, lhs] = edge_m2m_map[lhs, rhs].inv
+            cols.add(lhs, (lhs, rhs))
+            cols.add(rhs, (rhs, lhs))
         self.edge_m2m_map = edge_m2m_map
-        self.cols = dict(cols)
+        self.cols = cols
+        self.rels = rels
+
+    @classmethod
+    def from_rel_data_map(cls, rel_data_map):
+        """
+        convert a map of column label relationships to M2Ms
+        into a M2MGraph
+
+        rel_data_map -- { (lhs_col, rhs_col): {lhs_val: rhs_val} }
+        """
+        # TODO: better checking
+        cls(rel_data_map.keys(), rel_data_map)
 
     def __getitem__(self, key):
         """
@@ -287,60 +378,82 @@ class M2MGraph(object):
         """
         if type(key) is dict or type(key) is M2M:
             return M2MGraph(
-                key, 
-                dict([((lhs, rhs), self[lhs, rhs]) for lhs, rhs in key.iteritems()]))
-        if type(key) is list:
-            key = tuple(key)
+                key,
+                dict([((lhs, rhs), self.edge_m2m_map[lhs, rhs]) for lhs, rhs in key.items()]))
         if key in self.cols:
             return self._all_col(key)
         if type(key) is tuple:
-            if len(key) == 2:
-                if key in self.edge_m2m_map:
-                    return self.edge_m2m_map[key]
-                else:
-                    rkey = (key[1], key[0])
-                    if rkey in self.edge_m2m_map:
-                        return self.edge_m2m_map[rkey].inv
-                    raise KeyError("relationship {} not present in graph".format(key))
-            else:
-                col_pairs = zip(key[:-1], key[1:])
-                return M2MChain(
-                    _FROM_SLICE,
-                    dict([(col_pair, self[col_pair]) for col_pair in col_pairs]),
-                    key)
+            col_pairs = zip(key[:-1], key[1:])
+            m2ms = []
+            assert col_pairs[0][0] is not Ellipsis  # ... at the beginning is invalid
+            for lhs_col_pair, rhs_col_pair in zip(col_pairs[:-1], col_pairs[1:]):
+                if lhs_col_pair[0] is Ellipsis:
+                    continue  # skip, was handled by lhs
+                if lhs_col_pair[1] is Ellipsis:
+                    assert rhs_col_pair[0] is Ellipsis
+                    # join ... in the middle via pairs
+                    lhslhs, rhsrhs = lhs_col_pair[0], rhs_col_pair[1]
+                    m2ms.append(self.pairs(lhslhs, rhsrhs))
+                    continue
+                m2ms.append(self.edge_m2m_map[lhs_col_pair])
+            assert col_pairs[-1][1] is not Ellipsis  # ... on the end is invalid
+            if col_pairs[-1][0] is not Ellipsis:
+                m2ms.append(self.edge_m2m_map[col_pairs[-1]])
+            return M2MChain(m2ms, False)
         raise KeyError(key)
+
+    def __setitem__(self, key, val):
+        if type(key) is not tuple:
+            raise TypeError("expected tuple, not {!r}".format(type(key)))
+        if type(val) is M2M:
+            data = [val]
+        elif type(val) is M2MChain:
+            data = val.data
+        else:
+            raise TypeError("expected M2MChain or M2M for val, not {!r}".format(type(val)))
+        if len(data) != len(key) - 1:
+            raise ValueError("value wrong width ({}) for key {}".format(len(data), key))
+        for colpair, m2m in zip(zip(key[:-1], key[1:]), data):
+            lhs, rhs = colpair
+            self.cols.add(lhs, (lhs, rhs))
+            self.cols.add(rhs, (rhs, lhs))
+            self.edge_m2m_map[lhs, rhs] = m2m
+            self.edge_m2m_map[rhs, lhs] = m2m.inv
 
     def _all_col(self, col):
         """get all the values for a given column"""
         sofar = set()
         for edge in self.cols[col]:
-            m2m = self[edge]
-            if col == edge[0]:
-                m2m = self[edge]
-            if col == edge[1]:
-                m2m = self[edge].inv
-            sofar.update(m2m.keys())
-        return list(sofar)
+            sofar.update(self.edge_m2m_map[edge].keys())
+        return frozenset(sofar)
 
-    def pairs(self, lhs, rhs, paths=None):
+    def pairs(self, lhs, rhs, paths=None, ignore=None):
         """
         get all the unique pairs of values from lhs col and rhs col
-        along paths (if not specified, finds all paths)
+
+        ignore is a set of column names to exclude from building paths
+
+        paths is a list-of-lists of column names; if specified, will
+        follow exactly the chain of relationships specified by
+        each list of column names in paths rather than searching
+        for paths between lhs and rhs columns
         """
         assert lhs in self.cols
         assert rhs in self.cols
+        if ignore is None:
+            ignore = set()
         if paths is None:
-            paths = self._all_paths(lhs, rhs, set())
-        if not paths:
-            raise ValueError('no paths between col {} and {}'.format(lhs, rhs))
-        pairs = set()
+            paths = self._all_paths(lhs, rhs, ignore)
+            if not paths:
+                raise ValueError('no paths between col {} and {}'.format(lhs, rhs))
+        pairs = M2M()
         for path in paths:
             m2ms = self[path]
             if type(m2ms) is M2M:
                 pairs.update(m2ms.iteritems())
             else:
                 for row in m2ms:
-                    pairs.add((row[0], row[-1]))
+                    pairs.add(row[0], row[-1])
         return pairs
 
     def _all_paths(self, lhs, rhs, already_visited):
@@ -351,6 +464,9 @@ class M2MGraph(object):
         path to avoid loops
         returns [[str]]
         """
+        return [tuple(path) for path in self._all_paths2(lhs, rhs, already_visited)]
+
+    def _all_paths2(self, lhs, rhs, already_visited):
         if lhs == rhs:
             return [[lhs]]
         paths = []
@@ -360,7 +476,7 @@ class M2MGraph(object):
             if nxt in already_visited:
                 continue
             paths.extend(
-                [[lhs] + sub_path for sub_path in self._all_paths(
+                [[lhs] + sub_path for sub_path in self._all_paths2(
                     nxt, rhs, set([lhs]) | already_visited)])
         return paths
 
@@ -384,6 +500,14 @@ class M2MGraph(object):
         for key, lval, rval in to_add:
             self[key].add(lval, rval)
 
+    def remove(self, col, val):
+        """
+        given a column label and value, remove that value from
+        all relationships involving that column label
+        """
+        for key in self.cols[col]:
+            del self.edge_m2m_map[key][val]
+
     def attach(self, other):
         """
         attach all of the relationships from other into the
@@ -399,6 +523,12 @@ class M2MGraph(object):
         and there must be at least one link between the columns
         of self and other
         """
+        if type(other) is dict:
+            relationships = other.keys()
+            for r in relationships:
+                assert type(r) is tuple and len(r) == 2
+            data = {k: M2M(v) for k, v in other.items()}
+            other = M2MGraph(relationships, data)
         assert type(other) is type(self)
         # TODO: allow attaching of sequences?
         # check that relationships do not overlap
@@ -407,16 +537,8 @@ class M2MGraph(object):
         if overlaps:
             raise ValueError('relationships are specified by both graphs: {}'.format(
                 ", ".join([tuple(e) for e in overlaps])))
-        # check that columns do overlap
-        if not set(self.cols) & set(other.cols):
-            raise ValueError('graphs are disjoint {}, {}'.format(
-                list(self.cols), list(other.cols)))
         self.edge_m2m_map.update(other.edge_m2m_map)
-        for col in other.cols:
-            if col in self.cols:
-                self.cols[col] |= other.cols[col]
-            else:
-                self.cols[col] = other.cols[col]
+        self.cols.update(other.cols)
 
     def replace_col(self, col, valmap):
         """
@@ -431,50 +553,11 @@ class M2MGraph(object):
             for oldval, newval in valmap.items():
                 m2m.replace(oldval, newval)
 
-    def add_rel(self, from_, to, m2m):
-        """add a relationship"""
-        assert (to, from_) not in self.edge_m2m_map
-        assert from_ in self.cols or to in self.cols
-        assert type(m2m) is M2M
-        self.edge_m2m_map[from_, to] = m2m
-        if from_ not in self.cols:
-            self.cols[from_] = set()
-        self.cols[from_].add((from_, to))
-        if to not in self.cols:
-            self.cols[to] = set()
-        self.cols[to].add((from_, to))
-
-    def build_chain(self, *cols):
-        """
-        build a new M2MChain over a set of not neccesarily contiguous
-        columns
-
-        relatively expensive because it copies the underlying data structure
-        """
-        return M2MChain(
-            _FROM_SLICE,
-            dict([
-                (col_pair, M2M(self.pairs(col_pair[0], col_pair[1])))
-                for col_pair in zip(cols[:-1], cols[1:])]),
-            cols)
-
-    def filtered(self, filters):
-        """
-        return an M2MGraph with all columns filtered by predicates
-        specified in filters dict
-        """
-        f_copy = M2MGraph(self.edge_m2m_map.keys())
-        for lhs, rhs in self.edge_m2m_map:
-            m2m = self.edge_m2m_map[lhs, rhs]
-            if lhs not in filters and rhs not in filters:
-                f_copy[lhs, rhs].update(m2m)
-                continue
-            dst = f_copy[lhs, rhs]
-            for key, val in m2m.iteritems():
-                if lhs not in filters or filters[lhs](key):
-                    if rhs not in filters or filters[rhs](key):
-                        dst.add(key, val)
-        return f_copy
-
     def __eq__(self, other):
         return type(self) is type(other) and self.edge_m2m_map == other.edge_m2m_map
+
+    def __contains__(self, rel):
+        return rel in self.edge_m2m_map
+
+    def __repr__(self):
+        return "M2MGraph({}, ...)".format(self.rels)

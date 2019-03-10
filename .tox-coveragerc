@@ -1,0 +1,14 @@
+[run]
+branch = True
+source =
+    relativity
+    ../relativity
+
+[paths]
+source =
+   ../relativity
+   */lib/python*/site-packages/relativity
+   */Lib/site-packages/relativity
+   */pypy/site-packages/relativity
+omit =
+   */flycheck_*
