@@ -2,7 +2,8 @@ _PAIRING = object()  # marker
 
 
 class _Tmp(object):
-    pass  # just a little trick to avoid __init__ 
+    __slots__ = ('inv', 'data', 'listeners')
+    # just a little trick to avoid __init__
 
 
 # TODO: fill out the rest of dict API and inherit from dict
@@ -16,8 +17,12 @@ class M2M(object):
 
     also, can be used as a directed graph among hashable python objects
     """
+    __slots__ = ('inv', 'data', 'listeners')
+
     def __init__(self, items=None):
+        self.listeners = []
         self.inv = _Tmp()
+        self.inv.listeners = []
         self.inv.inv = self
         self.inv.__class__ = self.__class__
         if items.__class__ is self.__class__:
@@ -32,6 +37,18 @@ class M2M(object):
         self.inv.data = {}
         if items:
             self.update(items)
+
+    def _notify_add(self, key, val):
+        for listener in self.listeners:
+            listener.notify_add(key, val)
+        for listener in self.inv.listeners:
+            listener.notify_add(val, key)
+
+    def _notify_remove(self, key, val):
+        for listener in self.listeners:
+            listener.notify_remove(key, val)
+        for listener in self.inv.listeners:
+            listener.notify_remove(val, key)
 
     def get(self, key, default=frozenset()):
         try:
@@ -59,6 +76,8 @@ class M2M(object):
 
     def __delitem__(self, key):
         for val in self.data.pop(key):
+            if self.listeners:
+                self._notify_remove(key, val)
             self.inv.data[val].remove(key)
             if not self.inv.data[val]:
                 del self.inv.data[val]
@@ -70,8 +89,15 @@ class M2M(object):
             for k in other.data:
                 if k not in self.data:
                     self.data[k] = other.data[k]
+                    if self.listeners:
+                        for v in other.data[k]:
+                            self._notify_add(k, v)
                 else:
                     self.data[k].update(other.data[k])
+                    if self.listeners:
+                        for v in other.data[k]:
+                            if v not in self.data[k]:
+                                self._notify_add(k, v)
             for k in other.inv.data:
                 if k not in self.inv.data:
                     self.inv.data[k] = other.inv.data[k]
@@ -92,6 +118,7 @@ class M2M(object):
         if val not in self.inv.data:
             self.inv.data[val] = set()
         self.inv.data[val].add(key)
+        self._notify_add(key, val)
 
     def remove(self, key, val):
         self.data[key].remove(val)
@@ -100,6 +127,7 @@ class M2M(object):
         self.inv.data[val].remove(key)
         if not self.inv.data[val]:
             del self.inv.data[val]
+        self._notify_remove(key, val)
 
     def discard(self, key, val):
         if key not in self.data or val not in self.inv.data:
@@ -113,6 +141,10 @@ class M2M(object):
         if key not in self.data:
             return
         self.data[newkey] = fwdset = self.data.pop(key)
+        if self.listeners:
+            for val in fwdset:
+                self._notify_remove(key, val)
+                self._notify_add(newkey, val)
         for val in fwdset:
             revset = self.inv.data[val]
             revset.remove(key)

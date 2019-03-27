@@ -2,8 +2,7 @@ GOALS
 -----
 
 * indexing
-  * write-proxy that wraps M2M or M2M listeners
-    * .chain() from M2MGraph returns M2MChain full of proxies
+  * add indexing / listener attach to M2MGraph
   * when data is overwritten in M2MGraph, need to "unlisten" as well
   * read-only data structures for indexes
   * pairs() turns into an indexing scheme
@@ -12,6 +11,7 @@ GOALS
   * make it easier to predict what types come out
     * change .data to .m2ms on chain and graph
     * .chain() on graph
+  * make M2M members private with leading underscores
 * tests
   * start measuring coverage
   * tox
@@ -26,6 +26,7 @@ COMPLETED
 
 * indexing
   * index data structure
+  * M2Ms have "listeners" that can attach to indexes
 * consistent, predictable APIs
   * M2M.copy(), copy.copy(m2m), M2M.__init__()
     all give decent behaviors now

@@ -2,6 +2,7 @@ import copy
 
 
 from relativity import M2M, M2MChain, M2MGraph
+from relativity.tree import M2MTree
 
 
 def test_m2m_basic():
@@ -126,3 +127,41 @@ def test_m2mgraph_basic():
 
 
 #TODO: test M2MGraph.add_rel
+
+
+def test_listeners():
+    """
+    test that listeners work okay by ensuring that
+    a dummy listener which simply mirrors the state
+    of the base M2M remains in sync
+    """
+    class MirrorListener(object):
+        def __init__(self):
+            self.data = M2M()
+        def notify_add(self, key, val):
+            self.data.add(key, val)
+        def notify_remove(self, key, val):
+            print 'remove', key, val
+            self.data.remove(key, val)
+    test = M2M()
+    test.listeners.append(MirrorListener())
+    test.inv.listeners.append(MirrorListener())
+    def chk():
+        assert test == test.listeners[0].data
+        assert test.inv == test.inv.listeners[0].data
+    test.add(1, 1)
+    chk()
+    test.remove(1, 1)
+    chk()
+    test.update(M2M([(1, 1), (2, 2)]))
+    print test
+    chk()
+    test[3] = [4]
+    print test
+    chk()
+    test.pop(2)
+    chk()
+    del test[3]
+    chk()
+    test.discard(1, 1)
+    chk()

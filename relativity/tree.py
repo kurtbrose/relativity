@@ -134,4 +134,3 @@ class TreeIndexer(object):
 
     def __contains__(self, pair):
         return pair in self.pair_m2m_map or pair in self.tree_map
-
