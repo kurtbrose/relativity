@@ -56,6 +56,18 @@ class M2M(object):
         except KeyError:
             return default
 
+    def getall(self, keys):
+        """
+        since an M2M maps a key to a set of results
+        rather than a single result, unlike a normal dict
+        an M2M can combine the results of many keys together
+        without changing the return type
+        """
+        empty, sofar = set(), set()
+        for key in keys:
+            sofar |= self.data.get(key, empty)
+        return frozenset(sofar)
+
     def pop(self, key):
         val = frozenset(self.data[key])
         del self[key]
@@ -109,7 +121,14 @@ class M2M(object):
         else:
             for key, val in iterable:
                 self.add(key, val)
-        return
+    
+    def only(self, keys):
+        """
+        return a new M2M with only the data associated
+        with the corresponding keys
+        """
+        return M2M([
+            item for item in self.iteritems() if item[0] in keys])
 
     def add(self, key, val):
         if key not in self.data:
@@ -157,6 +176,9 @@ class M2M(object):
 
     def keys(self):
         return self.data.keys()
+
+    def values(self):
+        return self.inv.data.keys()
 
     def copy(self):
         """

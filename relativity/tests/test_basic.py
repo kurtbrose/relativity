@@ -14,6 +14,9 @@ def test_m2m_basic():
     m2m.add(1, 'b')
     assert len(m2m) == 1
     assert m2m.inv['a'] == frozenset([1])
+    assert set(m2m.values()) == set(['a', 'b'])
+    assert m2m.inv.only('a') == M2M([('a', 1)])
+    assert m2m.inv.getall(['a', 'b']) == frozenset([1])
 
     del m2m.inv['a']
     assert m2m[1] == frozenset(['b'])
