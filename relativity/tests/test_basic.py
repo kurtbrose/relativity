@@ -81,6 +81,10 @@ def test_m2mchain_basic():
         ('brad', 'brent', 'bruce'),
         ('cathy', 'cynthia', 'claire'),
         ('dan', 'don', 'dale')])
+    assert set(m2ms.only(('april', 'brad'))) == set([
+        ('april', 'alice', 'anna'),
+        ('brad', 'brent', 'bruce')])
+
 
 # canonical example: (city, fast food franchise, food type)
 

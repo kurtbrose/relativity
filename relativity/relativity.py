@@ -246,30 +246,33 @@ class M2MChain(object):
     """
     def __init__(self, m2ms, copy=True):
         if m2ms.__class__ is self.__class__:
-            m2ms = m2ms.data
+            m2ms = m2ms.m2ms
         for m2m in m2ms:
             if type(m2m) is not M2M:
                 raise TypeError('can only chain M2Ms, not {}'.format(type(m2m)))
         if copy:
-            self.data = [M2M(d) for d in m2ms]
+            self.m2ms = [M2M(d) for d in m2ms]
         else:
-            self.data = m2ms
+            self.m2ms = m2ms
 
+    # TODO: take multiple keysets (one per column)
     def only(self, keyset):
         """
         returns a chain that is filtered so that only keys in keyset are kept
         """
-        keep_m2m = M2M([(k, v) for k, v in self.data[0].iteritems() if k in keyset])
-        return M2MChain([keep_m2m] + self.data[1:], copy=False)
+        m2ms = [self.m2ms[0].only(keyset)]
+        for m2m in self.m2ms[1:]:
+            m2ms.append(m2m.only(m2ms[-1].values()))
+        return M2MChain(m2ms, copy=False)
 
     def _roll_lhs(self, key):
         # fold up keys left-to-right
         if key[0] == slice(None, None, None):
-            lhs = self.data[0]
+            lhs = self.m2ms[0]
         else:
             lhs = [key[0]]
         lhs = set(lhs)
-        rkey_data = zip(key[1:], self.data)
+        rkey_data = zip(key[1:], self.m2ms)
         for rkey, m2m in rkey_data:
             new_lhs = set()
             for lkey in lhs:
@@ -282,17 +285,17 @@ class M2MChain(object):
 
     def __getitem__(self, key):
         if type(key) is slice:
-            data = self.data[key]
+            data = self.m2ms[key]
             return M2MChain(data, copy=False)
         if type(key) is not tuple:
             raise TypeError("expected tuple, not {!r}".format(type(key)))
-        assert len(key) <= len(self.data)
+        assert len(key) <= len(self.m2ms)
         lhs = self._roll_lhs(key)
-        if len(key) == len(self.data) + 1:
+        if len(key) == len(self.m2ms) + 1:
             return lhs
         # build a chain of the remaining columns
         m2ms = []
-        for cur in self.data[len(key) - 1:]:
+        for cur in self.m2ms[len(key) - 1:]:
             new = M2M()
             for val in lhs:
                 if val in cur:
@@ -307,14 +310,14 @@ class M2MChain(object):
         return bool(self._roll_lhs(vals))
 
     def add(self, *vals):
-        assert len(self.data) + 1 == len(vals)
+        assert len(self.m2ms) + 1 == len(vals)
         val_pairs = zip(vals[:-1], vals[1:])
-        for m2m, val_pair in zip(self.data, val_pairs):
+        for m2m, val_pair in zip(self.m2ms, val_pairs):
             m2m.add(*val_pair)
 
     def update(self, vals_seq):
-        if len(self.data) == 1 and type(vals_seq) is M2M:
-            self.data[0].update(vals_seq)
+        if len(self.m2ms) == 1 and type(vals_seq) is M2M:
+            self.m2ms[0].update(vals_seq)
         else:
             for vals in vals_seq:
                 self.add(*vals)
@@ -323,7 +326,7 @@ class M2MChain(object):
         """
         return pairs between the given indices of data
         """
-        pairing = M2MChain(self.data[start:end], copy=False)
+        pairing = M2MChain(self.m2ms[start:end], copy=False)
         return M2M([(row[0], row[-1]) for row in pairing])
 
     def copy(self):
@@ -332,10 +335,10 @@ class M2MChain(object):
     __copy__ = copy
 
     def __eq__(self, other):
-        return type(self) is type(other) and self.data == other.data
+        return type(self) is type(other) and self.m2ms == other.m2ms
 
     def __repr__(self):
-        return "M2MChain({})".format(self.data)
+        return "M2MChain({})".format(self.m2ms)
 
     def __nonzero__(self):
         try:
@@ -353,7 +356,7 @@ class M2MChain(object):
         from M2M N is the key in M2M N+1 across the whole
         set of M2Ms
         """
-        m2ms = self.data
+        m2ms = self.m2ms
         rows = itertools.chain.from_iterable(
             [_join_all(key, m2ms[0], m2ms[1:]) for key in m2ms[0]])
         for row in rows:
@@ -462,7 +465,7 @@ class M2MGraph(object):
         if type(val) is M2M:
             data = [val]
         elif type(val) is M2MChain:
-            data = val.data
+            data = val.m2ms
         else:
             raise TypeError("expected M2MChain or M2M for val, not {!r}".format(type(val)))
         if len(data) != len(key) - 1:
