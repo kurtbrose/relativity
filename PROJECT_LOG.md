@@ -8,9 +8,6 @@ GOALS
   * pairs() turns into an indexing scheme
 * consistent, predictable APIs
   * all accessors return "live" sub-objects by default; use .copy() to copy
-  * make it easier to predict what types come out
-    * change .data to .m2ms on chain and graph
-    * .chain() on graph
   * make M2M members private with leading underscores
 * tests
   * start measuring coverage
@@ -27,6 +24,9 @@ COMPLETED
 * indexing
   * index data structure
   * M2Ms have "listeners" that can attach to indexes
+* make it easier to predict what types come out
+  * change .data to .m2ms on chain and graph
+  * .chain() on graph
 * consistent, predictable APIs
   * M2M.copy(), copy.copy(m2m), M2M.__init__()
     all give decent behaviors now

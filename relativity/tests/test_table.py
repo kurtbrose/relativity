@@ -1,5 +1,9 @@
+import pytest
+
 from relativity.table import Table
 
+
+@pytest.mark.skip()
 def mk_users():
     t = Table(['name', 'age'], ['user-id'])
     t[0] = ('alice', 42)
@@ -8,6 +12,7 @@ def mk_users():
     return t
 
 
+@pytest.mark.skip()
 def test_rows():
     t = mk_users()
     assert set(t) == set([
@@ -20,6 +25,7 @@ def test_rows():
     assert set(t) == set([(2, 'carol', 42)])
 
 
+@pytest.mark.skip()
 def test_indices():
     t = mk_users()
     t.add_index(['name'])

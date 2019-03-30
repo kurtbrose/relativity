@@ -391,7 +391,7 @@ class M2MGraph(object):
     """
     def __init__(self, relationships, data=None):
         relationships = M2M(relationships)
-        edge_m2m_map = {}
+        m2ms = {}
         cols = M2M()
         rels = []
         for lhs, rhs in relationships.iteritems():
@@ -399,20 +399,20 @@ class M2MGraph(object):
             assert lhs not in relationships.get(rhs)
             if data:
                 if (lhs, rhs) in data:
-                    edge_m2m_map[lhs, rhs] = data[lhs, rhs]
-                    edge_m2m_map[rhs, lhs] = data[lhs, rhs].inv
+                    m2ms[lhs, rhs] = data[lhs, rhs]
+                    m2ms[rhs, lhs] = data[lhs, rhs].inv
                     rels.append((lhs, rhs))
                 elif (rhs, lhs) in data:
-                    edge_m2m_map[lhs, rhs] = data[rhs, lhs].inv
-                    edge_m2m_map[rhs, lhs] = data[lhs, rhs]
+                    m2ms[lhs, rhs] = data[rhs, lhs].inv
+                    m2ms[rhs, lhs] = data[lhs, rhs]
                     rels.append((rhs, lhs))
             else:
                 rels.append((lhs, rhs))
-                edge_m2m_map[lhs, rhs] = M2M()
-                edge_m2m_map[rhs, lhs] = edge_m2m_map[lhs, rhs].inv
+                m2ms[lhs, rhs] = M2M()
+                m2ms[rhs, lhs] = m2ms[lhs, rhs].inv
             cols.add(lhs, (lhs, rhs))
             cols.add(rhs, (rhs, lhs))
-        self.edge_m2m_map = edge_m2m_map
+        self.m2ms = m2ms
         self.cols = cols
         self.rels = rels
 
@@ -436,28 +436,34 @@ class M2MGraph(object):
         if type(key) is dict or type(key) is M2M:
             return M2MGraph(
                 key,
-                dict([((lhs, rhs), self.edge_m2m_map[lhs, rhs]) for lhs, rhs in key.items()]))
+                dict([((lhs, rhs), self.m2ms[lhs, rhs]) for lhs, rhs in key.items()]))
         if key in self.cols:
             return self._all_col(key)
         if type(key) is tuple:
-            col_pairs = zip(key[:-1], key[1:])
-            m2ms = []
-            assert col_pairs[0][0] is not Ellipsis  # ... at the beginning is invalid
-            for lhs_col_pair, rhs_col_pair in zip(col_pairs[:-1], col_pairs[1:]):
-                if lhs_col_pair[0] is Ellipsis:
-                    continue  # skip, was handled by lhs
-                if lhs_col_pair[1] is Ellipsis:
-                    assert rhs_col_pair[0] is Ellipsis
-                    # join ... in the middle via pairs
-                    lhslhs, rhsrhs = lhs_col_pair[0], rhs_col_pair[1]
-                    m2ms.append(self.pairs(lhslhs, rhsrhs))
-                    continue
-                m2ms.append(self.edge_m2m_map[lhs_col_pair])
-            assert col_pairs[-1][1] is not Ellipsis  # ... on the end is invalid
-            if col_pairs[-1][0] is not Ellipsis:
-                m2ms.append(self.edge_m2m_map[col_pairs[-1]])
-            return M2MChain(m2ms, False)
+            return self.chain(*key)
         raise KeyError(key)
+
+    def chain(self, *cols):
+        """
+        return an M2MChain along the given columns
+        """
+        col_pairs = zip(cols[:-1], cols[1:])
+        m2ms = []
+        assert col_pairs[0][0] is not Ellipsis  # ... at the beginning is invalid
+        for lhs_col_pair, rhs_col_pair in zip(col_pairs[:-1], col_pairs[1:]):
+            if lhs_col_pair[0] is Ellipsis:
+                continue  # skip, was handled by lhs
+            if lhs_col_pair[1] is Ellipsis:
+                assert rhs_col_pair[0] is Ellipsis
+                # join ... in the middle via pairs
+                lhslhs, rhsrhs = lhs_col_pair[0], rhs_col_pair[1]
+                m2ms.append(self.pairs(lhslhs, rhsrhs))
+                continue
+            m2ms.append(self.m2ms[lhs_col_pair])
+        assert col_pairs[-1][1] is not Ellipsis  # ... on the end is invalid
+        if col_pairs[-1][0] is not Ellipsis:
+            m2ms.append(self.m2ms[col_pairs[-1]])
+        return M2MChain(m2ms, False)
 
     def __setitem__(self, key, val):
         if type(key) is not tuple:
@@ -474,14 +480,14 @@ class M2MGraph(object):
             lhs, rhs = colpair
             self.cols.add(lhs, (lhs, rhs))
             self.cols.add(rhs, (rhs, lhs))
-            self.edge_m2m_map[lhs, rhs] = m2m
-            self.edge_m2m_map[rhs, lhs] = m2m.inv
+            self.m2ms[lhs, rhs] = m2m
+            self.m2ms[rhs, lhs] = m2m.inv
 
     def _all_col(self, col):
         """get all the values for a given column"""
         sofar = set()
         for edge in self.cols[col]:
-            sofar.update(self.edge_m2m_map[edge].keys())
+            sofar.update(self.m2ms[edge].keys())
         return frozenset(sofar)
 
     def pairs(self, lhs, rhs, paths=None, ignore=None):
@@ -549,7 +555,7 @@ class M2MGraph(object):
             exists = False
             for rhs in row:
                 for key in (lhs, rhs), (rhs, lhs):
-                    if key in self.edge_m2m_map:
+                    if key in self.m2ms:
                         to_add.append((key, row[key[0]], row[key[1]]))
                         exists = True
             if not exists:
@@ -563,7 +569,7 @@ class M2MGraph(object):
         all relationships involving that column label
         """
         for key in self.cols[col]:
-            del self.edge_m2m_map[key][val]
+            del self.m2ms[key][val]
 
     def attach(self, other):
         """
@@ -589,12 +595,12 @@ class M2MGraph(object):
         assert type(other) is type(self)
         # TODO: allow attaching of sequences?
         # check that relationships do not overlap
-        overlaps = set([frozenset(e) for e in self.edge_m2m_map]) & (
-            set([frozenset(e) for e in other.edge_m2m_map]))
+        overlaps = set([frozenset(e) for e in self.m2ms]) & (
+            set([frozenset(e) for e in other.m2ms]))
         if overlaps:
             raise ValueError('relationships are specified by both graphs: {}'.format(
                 ", ".join([tuple(e) for e in overlaps])))
-        self.edge_m2m_map.update(other.edge_m2m_map)
+        self.m2ms.update(other.m2ms)
         self.cols.update(other.cols)
 
     def replace_col(self, col, valmap):
@@ -604,17 +610,17 @@ class M2MGraph(object):
         """
         for key in self.cols[col]:
             if col == key[0]:
-                m2m = self.edge_m2m_map[key]
+                m2m = self.m2ms[key]
             else:
-                m2m = self.edge_m2m_map[key].inv
+                m2m = self.m2ms[key].inv
             for oldval, newval in valmap.items():
                 m2m.replace(oldval, newval)
 
     def __eq__(self, other):
-        return type(self) is type(other) and self.edge_m2m_map == other.edge_m2m_map
+        return type(self) is type(other) and self.m2ms == other.m2ms
 
     def __contains__(self, rel):
-        return rel in self.edge_m2m_map
+        return rel in self.m2ms
 
     def __repr__(self):
         return "M2MGraph({}, ...)".format(self.rels)
