@@ -219,7 +219,7 @@ def chain(*rels):
         if type(obj) is M2M:
             m2ms.append(obj)
         elif type(obj) is M2MChain:
-            m2ms.extend(obj.data)
+            m2ms.extend(obj.m2ms)
     return M2MChain(m2ms, copy=False)
 
 
