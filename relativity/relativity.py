@@ -1,6 +1,3 @@
-_PAIRING = object()  # marker
-
-
 class _Tmp(object):
     __slots__ = ('inv', 'data', 'listeners')
     # just a little trick to avoid __init__
