@@ -498,8 +498,9 @@ class M2MGraph(object):
         each list of column names in paths rather than searching
         for paths between lhs and rhs columns
         """
-        assert lhs in self.cols
-        assert rhs in self.cols
+        missing = lhs if lhs not in self.cols else rhs if rhs not in self.cols else None
+        if missing:
+            raise KeyError('no col named {}; valid cols are {}'.format(missing, ", ".join(self.cols)))
         if ignore is None:
             ignore = set()
         if paths is None:
