@@ -3,35 +3,24 @@ import pytest
 from relativity.table import Table
 
 
-@pytest.mark.skip()
-def mk_users():
-    t = Table(['name', 'age'], ['user-id'])
-    t[0] = ('alice', 42)
-    t[1] = ('bob', 42)
-    t[2] = ('carol', 42)
-    return t
-
-
-@pytest.mark.skip()
-def test_rows():
-    t = mk_users()
-    assert set(t) == set([
+def test():
+    users = Table(['name', 'age'])
+    users.insert('alice', 42)
+    users.insert('bob', 42)
+    users.insert('carol', 42)
+    assert set(users) == set([
         (0, 'alice', 42),
         (1, 'bob', 42),
         (2, 'carol', 42),
     ])
-    del t[0]
-    del t[1]
-    assert set(t) == set([(2, 'carol', 42)])
+    del users[0]
+    del users[1]
+    assert set(users) == set([(2, 'carol', 42)])
 
 
-@pytest.mark.skip()
-def test_indices():
-    t = mk_users()
-    t.add_index(['name'])
-    assert t.indices['name',]['bob'] == set([1])
-    t.add_index(['age'])
-    assert t.indices['age',][42] == set([0, 1, 2])
-    del t[0]
-    del t[1]
-    assert t.indices['age',][42] == set([2])
+"""
+def test_new_api():
+    switchboard = Table(['vendor-id', 'matter-id'])
+    matter_oa_foo = Table(['matter-id', 'foo'])
+    switchboard = switchboard.join(matter_oa_foo, on="matter-id")
+"""
