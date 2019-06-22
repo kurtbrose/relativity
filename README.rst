@@ -213,6 +213,86 @@ intuitive:
         return data.pairs('restaurant', 'city').get(restaurant)
 
 
+Introducing Chain
+'''''''''''''''''
+
+Graphs are good for representing arbitrary sets of data, but they
+are awkward to query overy.  ``M2MChain``s sequences of ``M2M``s, where
+the keys of ``M2M`` n are meant to be drawn from the same pool
+as the values of ``M2M`` n - 1.
+
+A simple way to construct a chain is with the ``chain`` helper function.
+
+.. code-block:: python
+
+    students2classes = M2M([
+        ('alice', 'math'),
+        ('alice', 'english'),
+        ('bob', 'english'),
+        ('carol', 'math'),
+        ('doug', 'chemistry')])
+
+    classmates = chain(students2clases, students2classes.inv)
+
+
+By chaining the student:class map to itself, we can easily
+query which students have classes together.
+
+
+.. code-block:: python
+
+    >>> classmates.only('alice')
+    M2MChain([M2M([('alice', 'math'), ('alice', 'english')]), M2M([('math', 'carol'), ('math', 'alice'), ('english', 'bob'), ('english', 'alice')])])
+
+    >>> classmates.only('alice').m2ms[1]
+    M2M([('math', 'carol'), ('math', 'alice'), ('english', 'bob'), ('english', 'alice')])
+
+    >>> classmates.only('alice').m2ms[1].inv.keys()
+    ['bob', 'carol', 'alice']
+
+
+Relativity and DataBases
+------------------------
+
+Relativity is excellent at representing many-to-many relationships
+from databases which are otherwise awkward to handle.
+
+M2M + ORM
+'''''''''
+
+Let's consider an example from Django to start.
+
+
+.. code-block:: python
+
+    from django.db import models
+
+    class Student(models.model):
+        name = models.StringField()
+
+    class Course(models.model):
+        name = models.StringField()
+        students = models.ManyToMany(Student)
+
+
+Students take many courses, and each course has many students.
+
+Construting an ``M2M`` over these relationships is very natural:
+
+
+.. code-block:: python
+
+    from relativity import M2M
+    StudentCourse = Course.students.through
+
+    students2courses = M2M(
+        StudentCourse.objects.all().values_list('student', 'course'))
+
+
+
+
+
+
 
 Design Philosophy
 -----------------
