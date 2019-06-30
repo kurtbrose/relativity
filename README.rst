@@ -285,7 +285,7 @@ Construting an ``M2M`` over these relationships is very natural:
     from relativity import M2M
     StudentCourse = Course.students.through
 
-    students2courses = M2M(
+    enrollments = M2M(
         StudentCourse.objects.all().values_list('student', 'course'))
 
 
@@ -362,6 +362,19 @@ where-clause   list comprehension
 =============  ====================
 
 
+Architecture
+------------
+
+Relativity is built on the ``M2M`` -- all other data structures are
+various types of ``M2M`` containers.  An ``M2M`` is a very simple
+data structure that can be represented as two dicts:
+
+.. code-block:: python
+
+    {key: set(vals)}
+    {val: set(keys)}
+
+
 Relativity & Python Ecosystem
 -----------------------------
 
@@ -385,4 +398,71 @@ adding additional relationships.
 
 .. _Pandas: http://pandas.pydata.org/pandas-docs/stable/getting_started/overview.html
 
+
+When to Use
+"""""""""""
+
+Use Pandas_ for doing analysis of data within rows of a table; use
+Relativity for doing analysis of the relationships between rows of
+different tables.
+
+Coming back to the students-and-classes example:
+
+.. code-block:: python
+
+    class Enrollment(models.Model):
+         student = models.ForeignKey(Student)
+         class = models.ForeignKey(Class)
+         grade = models.FloatField()  # 0.0 - 5.0
+
+    # Pandas is great at determining each students GPA
+    enrollments_data_frame.group_by(['student']).mean()
+
+
+Better Together
+"""""""""""""""
+
+At a low-level, a Pandas_ ``Series`` and a Relaitivity ``M2M`` can
+both represent multiple values per key, so it is easy to convert
+between the two.
+
+.. code-block:: python
+
+    >>> import pandas
+    >>> import relativity
+    >>> s = pandas.Series(data=[1, 2, 2], index=['a', 'a', 'b'])
+    >>> s
+    a    1
+    a    2
+    b    2
+    dtype: int64
+    >>> m2m = relativity.M2M(s.items())
+    >>> m2m
+    M2M([('a', 1L), ('a', 2L), ('b', 2L)])
+    >>> keys, vals = zip(*m2m.iteritems())
+    >>> s2 = pandas.Series(data=vals, index=keys)
+    >>> s2
+    a    1
+    a    2
+    b    2
+    dtype: int64
+
+
+NetworkX_
+'''''''''
+
+NetworkX_ is the "graph theory library" of Python:
+
+"NetworkX is a Python package for the creation, manipulation,
+and study of the structure, dynamics, and functions of complex networks."
+
+NetworkX_ is great at representing arbitrarily connections among a group
+of nodes.  Relativity has relationship-centric APIs and data-structures,
+wehere the ``M2M`` represents a single relationship, and ``M2MChain``,
+``M2MStar``, and ``M2MGraph`` build higher order connections.  
+
+Underneath, both are backed by ``dict``.
+
+
+.. _NetworkX: https://networkx.github.io/
 
