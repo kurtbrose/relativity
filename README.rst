@@ -291,9 +291,6 @@ Construting an ``M2M`` over these relationships is very natural:
 
 
 
-
-
-
 Design Philosophy
 -----------------
 
@@ -363,3 +360,29 @@ join           chain and attach
 order by       sort and sorted
 where-clause   list comprehension
 =============  ====================
+
+
+Relativity & Python Ecosystem
+-----------------------------
+
+Pandas_
+'''''''
+
+Both Relativity and Pandas enable clean extraction of data from a SQL database
+to an in-memory data structure which may be further processed.  Both libraries
+provide data structures that can easily express queries over the in-memory
+data-set that would otherwise be very difficult and tempt a developer to go
+back to the database multiple times.
+
+This sounds like Relativity and Pandas should be in competition; but, in practice
+they are complementary.  Whereas Pandas is excellent at representing tabular
+data in rows and columns, Relativity excels at representing the foreign key
+relationships that connect rows in different tables.  Pandas makes it easy
+to take a SQL result set and further refine it by filtering rows and addding
+columns.  Relativity makes it easy to extract the foreign key relationships
+among many tables and further refine them by filtering by connectedness and
+adding additional relationships.
+
+.. _Pandas: http://pandas.pydata.org/pandas-docs/stable/getting_started/overview.html
+
+
