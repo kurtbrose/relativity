@@ -413,7 +413,7 @@ of ``M2MGraph``, ``M2MChain``, and ``M2MStar`` may _share_ their underlying
 order data structures can be treated as cheap and ephemeral.
 
 For example, ``M2MGraph.chain(*cols)`` will construct and return a new
-``M2MChain`` over the ``M2M` s linking the passed columns.  All that
+``M2MChain`` over the ``M2M`` s linking the passed columns.  All that
 actually happens here is the ``M2MGraph`` is queried for the underlying
 ``M2M`` s, then the list of ``M2M`` s is passed to the ``M2MChain``
 constructor which simply holds a reference to them.
