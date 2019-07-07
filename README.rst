@@ -381,7 +381,7 @@ sync, and to enumerate all of the key, val pairs.
 
 Similarly, the higher order data structures --
 ``M2MGraph``, ``M2MChain``, and ``M2MStar`` -- broadcast changes to
-underlying ``M2M``s and can return and enumerate them.
+underlying ``M2M`` s and can return and enumerate them.
 
 ``M2MChain`` and ``M2MStar``: rows of relations
 '''''''''''''''''''''''''''''''''''''''''''''''
@@ -394,12 +394,12 @@ point to the same base object, similar to a `star schema`_.
 
 .. _star schema: https://en.wikipedia.org/wiki/Star_schema
 
-Shared ``M2M``s
-'''''''''''''''
+Shared ``M2M`` s
+''''''''''''''''
 
 All of the higher order data structures are concerned with the structure
-between and among ``M2M``s.  The contents within a particular ``M2M`` does
-not need to maintain any invariants.  That is, if all of the ``M2M``s within
+between and among ``M2M`` s.  The contents within a particular ``M2M`` does
+not need to maintain any invariants.  That is, if all of the ``M2M`` s within
 one of the higher order data structures were scrambled up, the higher order
 data structure would still be valid.
 
@@ -409,18 +409,18 @@ inconsistent.)
 
 This has important consequences, because it means that various instances
 of ``M2MGraph``, ``M2MChain``, and ``M2MStar`` may _share_ their underlying
-``M2M``s, and continue to update them.  This means that all of these higher
+``M2M`` s, and continue to update them.  This means that all of these higher
 order data structures can be treated as cheap and ephemeral.
 
 For example, ``M2MGraph.chain(*cols)`` will construct and return a new
-``M2MChain`` over the ``M2M``s linking the passed columns.  All that
+``M2MChain`` over the ``M2M` s linking the passed columns.  All that
 actually happens here is the ``M2MGraph`` is queried for the underlying
-``M2M``s, then the list of ``M2M``s is passed to the ``M2MChain``
+``M2M`` s, then the list of ``M2M`` s is passed to the ``M2MChain``
 constructor which simply holds a reference to them.
 
 Another way to think of ``M2MGraph``, ``M2MChain`` and ``M2MStar`` is
-as cheap views over the underlying ``M2M``s.  No matter how much data is in
-the underlying ``M2M``s, assembling one of these higher order data structures
+as cheap views over the underlying ``M2M`` s.  No matter how much data is in
+the underlying ``M2M`` s, assembling one of these higher order data structures
 over top has a fixed, low cost.
 
 
