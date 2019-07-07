@@ -375,9 +375,53 @@ data structure that can be represented as two dicts:
     {key: set(vals)}
     {val: set(keys)}
 
-Specifically, there is the ``M2MGraph``, ``M2MChain``, and ``M2MStar``.
-``M2MChain`` and ``M2MStar`` are basically helper functions over a ``list``
-of ``M2M``.
+The main job of the ``M2M`` is to broadcast changes to the
+underlying ``dict`` and ``set`` instances such that they are kept in
+sync, and to enumerate all of the key, val pairs.
+
+Similarly, the higher order data structures --
+``M2MGraph``, ``M2MChain``, and ``M2MStar`` -- broadcast changes to
+underlying ``M2M``s and can return and enumerate them.
+
+``M2MChain`` and ``M2MStar``: rows of relations
+'''''''''''''''''''''''''''''''''''''''''''''''
+
+``M2MChain`` and ``M2MStar`` are implemented as thin wrappers over a ``list``
+of ``M2M``.  The main feature they bring provide "row-iteration".  The difference
+between them is how they defined a row.  ``M2MChain`` represents relationships
+that connect end-to-end.  ``M2MStar`` represents relationships that all
+point to the same base object, similar to a `star schema`_.
+
+.. _star schema: https://en.wikipedia.org/wiki/Star_schema
+
+Shared ``M2M``s
+'''''''''''''''
+
+All of the higher order data structures are concerned with the structure
+between and among ``M2M``s.  The contents within a particular ``M2M`` does
+not need to maintain any invariants.  That is, if all of the ``M2M``s within
+one of the higher order data structures were scrambled up, the higher order
+data structure would still be valid.
+
+(Contrast with, if you were to scramble
+the key sets and val sets around within an ``M2M``, it would be totally
+inconsistent.)
+
+This has important consequences, because it means that various instances
+of ``M2MGraph``, ``M2MChain``, and ``M2MStar`` may _share_ their underlying
+``M2M``s, and continue to update them.  This means that all of these higher
+order data structures can be treated as cheap and ephemeral.
+
+For example, ``M2MGraph.chain(*cols)`` will construct and return a new
+``M2MChain`` over the ``M2M``s linking the passed columns.  All that
+actually happens here is the ``M2MGraph`` is queried for the underlying
+``M2M``s, then the list of ``M2M``s is passed to the ``M2MChain``
+constructor which simply holds a reference to them.
+
+Another way to think of ``M2MGraph``, ``M2MChain`` and ``M2MStar`` is
+as cheap views over the underlying ``M2M``s.  No matter how much data is in
+the underlying ``M2M``s, assembling one of these higher order data structures
+over top has a fixed, low cost.
 
 
 Relativity & Python Ecosystem
