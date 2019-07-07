@@ -365,7 +365,8 @@ where-clause   list comprehension
 Architecture
 ------------
 
-Relativity is built on the ``M2M`` -- all other data structures are
+The fundamental unit of Relativity is the _relation_, in the form of
+the ``M2M``.  All other data structures are
 various types of ``M2M`` containers.  An ``M2M`` is a very simple
 data structure that can be represented as two dicts:
 
@@ -373,6 +374,10 @@ data structure that can be represented as two dicts:
 
     {key: set(vals)}
     {val: set(keys)}
+
+Specifically, there is the ``M2MGraph``, ``M2MChain``, and ``M2MStar``.
+``M2MChain`` and ``M2MStar`` are basically helper functions over a ``list``
+of ``M2M``.
 
 
 Relativity & Python Ecosystem
