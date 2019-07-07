@@ -365,7 +365,7 @@ where-clause   list comprehension
 Architecture
 ------------
 
-The fundamental unit of Relativity is the _relation_, in the form of
+The fundamental unit of Relativity is the *relation*, in the form of
 the ``M2M``.  All other data structures are
 various types of ``M2M`` containers.  An ``M2M`` is a very simple
 data structure that can be represented as two dicts:
@@ -408,7 +408,7 @@ the key sets and val sets around within an ``M2M``, it would be totally
 inconsistent.)
 
 This has important consequences, because it means that various instances
-of ``M2MGraph``, ``M2MChain``, and ``M2MStar`` may _share_ their underlying
+of ``M2MGraph``, ``M2MChain``, and ``M2MStar`` may *share* their underlying
 ``M2M`` s, and continue to update them.  This means that all of these higher
 order data structures can be treated as cheap and ephemeral.
 
