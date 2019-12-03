@@ -148,7 +148,7 @@ def test_listeners():
         def notify_add(self, key, val):
             self.data.add(key, val)
         def notify_remove(self, key, val):
-            print 'remove', key, val
+            print('remove', key, val)
             self.data.remove(key, val)
     test = M2M()
     test.listeners.append(MirrorListener())
@@ -161,10 +161,10 @@ def test_listeners():
     test.remove(1, 1)
     chk()
     test.update(M2M([(1, 1), (2, 2)]))
-    print test
+    print(test)
     chk()
     test[3] = [4]
-    print test
+    print(test)
     chk()
     test.pop(2)
     chk()

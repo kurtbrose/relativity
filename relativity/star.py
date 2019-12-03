@@ -24,7 +24,7 @@ class Star(object):
 
     def __getitem__(self, key):
         return frozenset(itertools.product(*[
-            m2m.get(key) for key in self.m2ms]))
+            m2m.get(key) for m2m in self.m2ms]))
 
     def __iter__(self):
         keys = set()
