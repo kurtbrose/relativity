@@ -86,11 +86,11 @@ class TreeIndexer(object):
     def __init__(self, pair_m2m_map):
         self.pair_m2m_map = pair_m2m_map
         self.tree_map = {}  # {(lhs, rhs): M2MTree}
-        self.parents_of = {m2m: [] for m2m in pair_m2m_map.values()}
+        self.parents_of = {id(m2m): [] for m2m in pair_m2m_map.values()}
 
     def add_index(self, *cols):
         # this would synergize well with find_paths from M2MGraph
-        pairs = zip(cols[:-1], cols[1:])
+        pairs = tuple(zip(cols[:-1], cols[1:]))
         for pair in pairs:
             assert pair in self.pair_m2m_map
         assert len(pairs) >= 2
@@ -101,7 +101,7 @@ class TreeIndexer(object):
         if cur_col_pair in self:
             return self[cur_col_pair]
         if len(pairs) > 3:
-            split = len(pairs) / 2
+            split = len(pairs) // 2
             left_pairs, right_pairs = pairs[:split], pairs[split:]
             left, right = self._add_index2(left_pairs), self._add_index2(right_pairs)
         if len(pairs) == 3:  # asymmetric case
@@ -111,20 +111,20 @@ class TreeIndexer(object):
         if len(pairs) < 2:
             assert False, "shouldn't be able to get here"
         ret = self.tree_map[cur_col_pair] = M2MTree(left, right)
-        if left in self.parents_of:
-            self.parents_of[left].append(ret)
-        if right in self.parents_of:
-            self.parents_of[right].append(ret)
+        if id(left) in self.parents_of:
+            self.parents_of[id(left)].append(ret)
+        if id(right) in self.parents_of:
+            self.parents_of[id(right)].append(ret)
         return ret
 
     def notify_add(self, rel, a, b):
         m2m = self.pair_m2m_map[rel]
-        for parent in self.parents_of[m2m]:
+        for parent in self.parents_of[id(m2m)]:
             parent.notify_add(m2m, a, b)
 
     def notify_remove(self, rel, a, b):
         m2m = self.pair_m2m_map[rel]
-        for parent in self.parents_of[m2m]:
+        for parent in self.parents_of[id(m2m)]:
             parent.notify_remove(m2m, a, b)
 
     def __getitem__(self, pair):

@@ -344,6 +344,8 @@ class M2MChain(object):
         except StopIteration:
             return False
 
+    __bool__ = __nonzero__
+
     def __iter__(self):
         """
         iterate over all of the possible paths through the
@@ -444,9 +446,9 @@ class M2MGraph(object):
         """
         return an M2MChain along the given columns
         """
-        col_pairs = zip(cols[:-1], cols[1:])
+        assert cols[0] is not Ellipsis  # ... at the beginning is invalid
+        col_pairs = tuple(zip(cols[:-1], cols[1:]))
         m2ms = []
-        assert col_pairs[0][0] is not Ellipsis  # ... at the beginning is invalid
         for lhs_col_pair, rhs_col_pair in zip(col_pairs[:-1], col_pairs[1:]):
             if lhs_col_pair[0] is Ellipsis:
                 continue  # skip, was handled by lhs
