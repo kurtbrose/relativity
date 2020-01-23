@@ -177,7 +177,7 @@ implement:
         for location in location_city.inv[city]:
             for restaurant in restaurant_location.inv[location]:
                 restaurants.add(restaurant)
-        return restaurant
+        return restaurants
 
     def cities_of_restaurant(restaurant):
         cities = set()
