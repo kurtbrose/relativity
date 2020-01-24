@@ -2,3 +2,4 @@ attrs
 boltons
 coverage
 pytest==4.*
+tox
