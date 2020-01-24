@@ -25,7 +25,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements-test.txt
+        python -m pip install -r requirements-test.txt
     - name: Test with tox -e ${{ matrix.tox-env }}
       run: |
         tox -e ${{ matrix.tox-env }}
@@ -33,16 +33,11 @@ jobs:
       env:
         CODECOV_TOKEN: $(codecov.token)
       run: |
-          if [ ! -f .coverage.* ]; then
-            echo No coverage data found.
-            exit 0
-          fi
-
           # codecov shells out to "coverage" and avoiding 'sudo pip' allows for
           # package caching.
           PATH=$HOME/.local/bin:$PATH
 
-          $PY -m pip install --user 'coverage[toml]' codecov
+          python -m pip install --user 'coverage[toml]' codecov
 
           coverage combine
           codecov
