@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 __author__ = 'Kurt Rose'
-__version__ = '20.1.0'
+__version__ = '20.1.1dev'
 __contact__ = 'kurt@kurtrose.com'
 __url__ = 'https://github.com/kurtbrose/relativity'
 __license__ = 'MIT'
@@ -10,7 +10,6 @@ __license__ = 'MIT'
 
 with open('README.rst') as readme_f:
     long_description = readme_f.read()
-
 
 
 setup(name='relativity',
