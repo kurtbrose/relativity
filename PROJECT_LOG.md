@@ -10,13 +10,16 @@ GOALS
   * all accessors return "live" sub-objects by default; use .copy() to copy
   * make M2M members private with leading underscores
 * tests
-  * start measuring coverage
-  * tox
-  * travis-ci
   * doctest example
 * docs
   * up-to-date for now; need to build up APIs more
 
+
+2020-01-24
+----------
+* start measuring coverage
+* tox
+* travis-ci
 
 COMPLETED
 ---------
