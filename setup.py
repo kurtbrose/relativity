@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 __author__ = 'Kurt Rose'
-__version__ = '0.2.0'
+__version__ = '20.1.0'
 __contact__ = 'kurt@kurtrose.com'
 __url__ = 'https://github.com/kurtbrose/relativity'
 __license__ = 'MIT'
@@ -38,3 +38,25 @@ setup(name='relativity',
           'Programming Language :: Python :: Implementation :: CPython',
           'Programming Language :: Python :: Implementation :: PyPy', ]
 )
+
+
+"""
+A brief checklist for release:
+
+* tox
+* git commit (if applicable)
+* Bump setup.py version off of -dev
+* git commit -a -m "bump version for vx.y.z release"
+* rm -rf dist/*
+* python setup.py sdist bdist_wheel
+* twine upload dist/*
+* bump docs/conf.py version
+* git commit
+* git tag -a vx.y.z -m "brief summary"
+* write CHANGELOG
+* git commit
+* bump setup.py version onto n+1 dev
+* git commit
+* git push
+
+"""
