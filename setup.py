@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 __author__ = 'Kurt Rose'
-__version__ = '0.1dev'
+__version__ = '0.2.0'
 __contact__ = 'kurt@kurtrose.com'
 __url__ = 'https://github.com/kurtbrose/relativity'
 __license__ = 'MIT'
