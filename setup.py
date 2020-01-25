@@ -8,10 +8,16 @@ __url__ = 'https://github.com/kurtbrose/relativity'
 __license__ = 'MIT'
 
 
+with open('README.rst') as readme_f:
+    long_description = readme_f.read()
+
+
+
 setup(name='relativity',
       version=__version__,
       description="Relational object sets.",
-      long_description=__doc__,
+      long_description=long_description,
+      long_description_content_type='text/x-rst',
       author=__author__,
       author_email=__contact__,
       url=__url__,
