@@ -29,15 +29,15 @@ jobs:
     - name: Test with tox -e ${{ matrix.tox-env }}
       run: |
         tox -e ${{ matrix.tox-env }}
-    - name: Report Coverage
-      env:
-        CODECOV_TOKEN: $(codecov.token)
-      run: |
-          # codecov shells out to "coverage" and avoiding 'sudo pip' allows for
-          # package caching.
-          PATH=$HOME/.local/bin:$PATH
-
-          python -m pip install --user 'coverage[toml]' codecov
-
-          coverage combine
-          codecov
+#    - name: Report Coverage
+#      env:
+#        CODECOV_TOKEN: $(codecov.token)
+#      run: |
+#          # codecov shells out to "coverage" and avoiding 'sudo pip' allows for
+#          # package caching.
+#          PATH=$HOME/.local/bin:$PATH
+#
+#          python -m pip install --user 'coverage[toml]' codecov
+#
+#          coverage combine
+#          codecov
