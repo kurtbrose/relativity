@@ -380,16 +380,16 @@ underlying ``dict`` and ``set`` instances such that they are kept in
 sync, and to enumerate all of the key, val pairs.
 
 Similarly, the higher order data structures --
-``M2MGraph``, ``M2MChain``, and ``M2MStar`` -- broadcast changes to
+``M2MGraph``, ``M2MChain``, and ``Star`` -- broadcast changes to
 underlying ``M2M`` s and can return and enumerate them.
 
-``M2MChain`` and ``M2MStar``: rows of relations
+``M2MChain`` and ``Star``: rows of relations
 '''''''''''''''''''''''''''''''''''''''''''''''
 
-``M2MChain`` and ``M2MStar`` are implemented as thin wrappers over a ``list``
+``M2MChain`` and ``Star`` are implemented as thin wrappers over a ``list``
 of ``M2M``.  The main feature they bring provide "row-iteration".  The difference
 between them is how they defined a row.  ``M2MChain`` represents relationships
-that connect end-to-end.  ``M2MStar`` represents relationships that all
+that connect end-to-end.  ``Star`` represents relationships that all
 point to the same base object, similar to a `star schema`_.
 
 .. _star schema: https://en.wikipedia.org/wiki/Star_schema
@@ -408,7 +408,7 @@ the key sets and val sets around within an ``M2M``, it would be totally
 inconsistent.)
 
 This has important consequences, because it means that various instances
-of ``M2MGraph``, ``M2MChain``, and ``M2MStar`` may *share* their underlying
+of ``M2MGraph``, ``M2MChain``, and ``Star`` may *share* their underlying
 ``M2M`` s, and continue to update them.  This means that all of these higher
 order data structures can be treated as cheap and ephemeral.
 
@@ -418,7 +418,7 @@ actually happens here is the ``M2MGraph`` is queried for the underlying
 ``M2M`` s, then the list of ``M2M`` s is passed to the ``M2MChain``
 constructor which simply holds a reference to them.
 
-Another way to think of ``M2MGraph``, ``M2MChain`` and ``M2MStar`` is
+Another way to think of ``M2MGraph``, ``M2MChain`` and ``Star`` is
 as cheap views over the underlying ``M2M`` s.  No matter how much data is in
 the underlying ``M2M`` s, assembling one of these higher order data structures
 over top has a fixed, low cost.
@@ -508,7 +508,7 @@ and study of the structure, dynamics, and functions of complex networks."
 NetworkX_ is great at representing arbitrarily connections among a group
 of nodes.  Relativity has relationship-centric APIs and data-structures,
 wehere the ``M2M`` represents a single relationship, and ``M2MChain``,
-``M2MStar``, and ``M2MGraph`` build higher order connections.  
+``Star``, and ``M2MGraph`` build higher order connections.  
 
 Underneath, both are backed by ``dict``.
 
