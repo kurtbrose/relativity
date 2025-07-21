@@ -4,8 +4,8 @@ from typing import Any, Iterable, Iterator, FrozenSet, Tuple, TypeVar, Generic
 K = TypeVar("K")
 V = TypeVar("V")
 
-# TODO: fill out the rest of dict API and inherit from dict
-class M2M(Generic[K, V]):
+# Many-to-many mapping implemented as a full ``dict`` subclass
+class M2M(dict, Generic[K, V]):
     """
     a dict-like entity that represents a many-to-many relationship
     between two groups of objects
@@ -15,25 +15,22 @@ class M2M(Generic[K, V]):
 
     also, can be used as a directed graph among hashable python objects
     """
-    __slots__ = ('inv', 'data', 'listeners')
+    __slots__ = ('inv', 'listeners')
 
     def __init__(self, items: Iterable[tuple[K, V]] | "M2M[K, V]" | None = None):
+        dict.__init__(self)
         self.listeners: list[Any] = []
         self.inv: M2M[V, K] = self.__class__.__new__(self.__class__)
+        dict.__init__(self.inv)
         self.inv.listeners = []
         self.inv.inv = self
         if items.__class__ is self.__class__:
-            self.data: dict[K, set[V]] = dict(
-                [(k, set(v)) for k, v in items.data.items()])
-            self.inv.data: dict[V, set[K]] = dict(
-                [(k, set(v)) for k, v in items.inv.data.items()])
+            dict.update(self, {k: set(v) for k, v in dict.items(items)})
+            dict.update(self.inv, {k: set(v) for k, v in dict.items(items.inv)})
             return
-            # tolerate a little weirdness here to make M2M(other_m2m)
-            # pythonic copying idiom as fast as possible
-        self.data = {}  # type: dict[K, set[V]]
-        self.inv.data = {}  # type: dict[V, set[K]]
         if items:
             self.update(items)
+
 
     def _notify_add(self, key: K, val: V) -> None:
         for listener in self.listeners:
@@ -62,56 +59,43 @@ class M2M(Generic[K, V]):
         """
         empty, sofar = set(), set()
         for key in keys:
-            sofar |= self.data.get(key, empty)
+            sofar |= dict.get(self, key, empty)
         return frozenset(sofar)
 
     def pop(self, key: K) -> FrozenSet[V]:
-        val = frozenset(self.data[key])
+        val = frozenset(dict.__getitem__(self, key))
         del self[key]
         return val
 
     def __getitem__(self, key: K) -> FrozenSet[V]:
-        return frozenset(self.data[key])
+        return frozenset(dict.__getitem__(self, key))
 
     def __setitem__(self, key: K, vals: Iterable[V]) -> None:
         vals = set(vals)
         if key in self:
-            to_remove = self.data[key] - vals
-            vals -= self.data[key]
+            current = dict.__getitem__(self, key)
+            to_remove = current - vals
+            vals -= current
             for val in to_remove:
                 self.remove(key, val)
         for val in vals:
             self.add(key, val)
 
     def __delitem__(self, key: K) -> None:
-        for val in self.data.pop(key):
+        for val in dict.pop(self, key):
             if self.listeners:
                 self._notify_remove(key, val)
-            self.inv.data[val].remove(key)
-            if not self.inv.data[val]:
-                del self.inv.data[val]
+            rev = dict.__getitem__(self.inv, val)
+            rev.remove(key)
+            if not rev:
+                del self.inv[val]
 
     def update(self, iterable: Iterable[tuple[K, V]] | "M2M[K, V]" | dict[K, V]) -> None:
         """given an iterable of (key, val), add them all"""
         if type(iterable) is type(self):
-            other = iterable
-            for k in other.data:
-                if k not in self.data:
-                    self.data[k] = other.data[k]
-                    if self.listeners:
-                        for v in other.data[k]:
-                            self._notify_add(k, v)
-                else:
-                    self.data[k].update(other.data[k])
-                    if self.listeners:
-                        for v in other.data[k]:
-                            if v not in self.data[k]:
-                                self._notify_add(k, v)
-            for k in other.inv.data:
-                if k not in self.inv.data:
-                    self.inv.data[k] = other.inv.data[k]
-                else:
-                    self.inv.data[k].update(other.inv.data[k])
+            for k, vals in dict.items(iterable):
+                for v in vals:
+                    self.add(k, v)
         elif callable(getattr(iterable, 'keys', None)):
             for k in iterable.keys():
                 self.add(k, iterable[k])
@@ -128,25 +112,27 @@ class M2M(Generic[K, V]):
             item for item in self.iteritems() if item[0] in keys])
 
     def add(self, key: K, val: V) -> None:
-        if key not in self.data:
-            self.data[key] = set()
-        self.data[key].add(val)
-        if val not in self.inv.data:
-            self.inv.data[val] = set()
-        self.inv.data[val].add(key)
+        if key not in self:
+            dict.__setitem__(self, key, set())
+        dict.__getitem__(self, key).add(val)
+        if val not in self.inv:
+            dict.__setitem__(self.inv, val, set())
+        dict.__getitem__(self.inv, val).add(key)
         self._notify_add(key, val)
 
     def remove(self, key: K, val: V) -> None:
-        self.data[key].remove(val)
-        if not self.data[key]:
-            del self.data[key]
-        self.inv.data[val].remove(key)
-        if not self.inv.data[val]:
-            del self.inv.data[val]
+        fwd = dict.__getitem__(self, key)
+        fwd.remove(val)
+        if not fwd:
+            del self[key]
+        rev = dict.__getitem__(self.inv, val)
+        rev.remove(key)
+        if not rev:
+            del self.inv[val]
         self._notify_remove(key, val)
 
     def discard(self, key: K, val: V) -> None:
-        if key not in self.data or val not in self.inv.data:
+        if key not in self or val not in self.inv:
             return
         self.remove(key, val)
 
@@ -154,28 +140,65 @@ class M2M(Generic[K, V]):
         """
         replace instances of key by newkey
         """
-        if key not in self.data:
+        if key not in self:
             return
-        self.data[newkey] = fwdset = self.data.pop(key)
+        dict.__setitem__(self, newkey, dict.pop(self, key))
+        fwdset = dict.__getitem__(self, newkey)
         if self.listeners:
             for val in fwdset:
                 self._notify_remove(key, val)
                 self._notify_add(newkey, val)
         for val in fwdset:
-            revset = self.inv.data[val]
+            revset = dict.__getitem__(self.inv, val)
             revset.remove(key)
             revset.add(newkey)
 
     def iteritems(self) -> Iterable[Tuple[K, V]]:
-        for key in self.data:
-            for val in self.data[key]:
+        for key in self:
+            for val in dict.__getitem__(self, key):
                 yield key, val
 
+    # Python mapping API -------------------------------------------------
+    def items(self) -> Iterable[Tuple[K, FrozenSet[V]]]:
+        return ((k, frozenset(v)) for k, v in dict.items(self))
+
+    def clear(self) -> None:
+        for key in list(self.keys()):
+            del self[key]
+
+    def popitem(self) -> Tuple[K, FrozenSet[V]]:
+        key, vals = dict.popitem(self)
+        for val in list(vals):
+            rev = dict.__getitem__(self.inv, val)
+            rev.remove(key)
+            if not rev:
+                del self.inv[val]
+            if self.listeners:
+                self._notify_remove(key, val)
+        return key, frozenset(vals)
+
+    def setdefault(self, key: K, default: Iterable[V] | None = None) -> FrozenSet[V]:
+        if key not in self:
+            if default is None:
+                default = []
+            self[key] = default
+        return self[key]
+
+    @classmethod
+    def fromkeys(cls, keys: Iterable[K], value: Iterable[V] | None = None) -> "M2M[K, V]":
+        m2m = cls()
+        for k in keys:
+            if value is not None:
+                m2m[k] = value
+            else:
+                m2m[k] = []
+        return m2m
+
     def keys(self) -> Iterable[K]:
-        return self.data.keys()
+        return dict.keys(self)
 
     def values(self) -> Iterable[V]:
-        return self.inv.data.keys()
+        return self.inv.keys()
 
     def copy(self) -> "M2M[K, V]":
         """
@@ -184,23 +207,30 @@ class M2M(Generic[K, V]):
         """
         return self.__class__(self)
 
-    __copy__ = copy
+    def __copy__(self) -> "M2M[K, V]":
+        return self.copy()
+
+    def __deepcopy__(self, memo: dict) -> "M2M[K, V]":
+        return self.copy()
     # NOTE: __copy__ by default will be pretty useless so
     # it is overridden here; __deepcopy__ is correct by default
-    # because it copies self.data, and all of the sets in self.data
-    # as well as self.inv -- so we don't bother to override the behavior
+    # because it copies the underlying dict of sets as well as self.inv
+    # so we don't bother to override the behavior
 
     def __contains__(self, key: K) -> bool:
-        return key in self.data
+        return dict.__contains__(self, key)
 
     def __iter__(self) -> Iterator[K]:
-        return self.data.__iter__()
+        return dict.__iter__(self)
 
     def __len__(self) -> int:
-        return self.data.__len__()
+        return dict.__len__(self)
 
     def __eq__(self, other):
-        return type(self) == type(other) and self.data == other.data
+        return type(self) == type(other) and dict.__eq__(self, other)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def __repr__(self) -> str:
         cn = self.__class__.__name__
@@ -329,7 +359,8 @@ class M2MChain(object):
     def copy(self):
         return M2MChain(self)
 
-    __copy__ = copy
+    def __copy__(self):
+        return self.copy()
 
     def __eq__(self, other: Any) -> bool:
         return type(self) is type(other) and self.m2ms == other.m2ms
