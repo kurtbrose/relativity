@@ -172,3 +172,9 @@ def test_listeners():
     chk()
     test.discard(1, 1)
     chk()
+
+
+def test_from_rel_data_map_returns_graph():
+    rel_data_map = {('a', 'b'): M2M([(1, 2)]), ('b', 'c'): M2M([(2, 3)])}
+    g = M2MGraph.from_rel_data_map(rel_data_map)
+    assert isinstance(g, M2MGraph)
