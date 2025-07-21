@@ -149,7 +149,7 @@ lines of code and intermediate values?
 M2M to M2MGraph
 '''''''''''''''
 
-Where relativity really shines is releiving the programmer
+Where relativity really shines is relieving the programmer
 of the burden of keeping data structures consistent with updates.
 Let's consider our restaurant example if we need to be able
 to add and remove locations one at a time and still be able
