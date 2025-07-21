@@ -63,9 +63,15 @@ class M2M(dict, Generic[K, V]):
         return frozenset(sofar)
 
     def pop(self, key: K) -> FrozenSet[V]:
-        val = frozenset(dict.__getitem__(self, key))
-        del self[key]
-        return val
+        vals = dict.pop(self, key)
+        for val in list(vals):
+            rev = dict.__getitem__(self.inv, val)
+            rev.remove(key)
+            if not rev:
+                del self.inv[val]
+            if self.listeners:
+                self._notify_remove(key, val)
+        return frozenset(vals)
 
     def __getitem__(self, key: K) -> FrozenSet[V]:
         return frozenset(dict.__getitem__(self, key))
@@ -194,9 +200,7 @@ class M2M(dict, Generic[K, V]):
                 m2m[k] = []
         return m2m
 
-    def keys(self) -> Iterable[K]:
-        return dict.keys(self)
-
+    # dict.keys() already has the correct behavior
     def values(self) -> Iterable[V]:
         return self.inv.keys()
 
