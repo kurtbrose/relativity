@@ -1,10 +1,11 @@
-class _Tmp(object):
-    __slots__ = ('inv', 'data', 'listeners')
-    # just a little trick to avoid __init__
+from typing import Any, Iterable, Iterator, FrozenSet, Tuple, TypeVar, Generic
 
+# Generic key and value type variables used throughout M2M
+K = TypeVar("K")
+V = TypeVar("V")
 
 # TODO: fill out the rest of dict API and inherit from dict
-class M2M(object):
+class M2M(Generic[K, V]):
     """
     a dict-like entity that represents a many-to-many relationship
     between two groups of objects
@@ -16,44 +17,43 @@ class M2M(object):
     """
     __slots__ = ('inv', 'data', 'listeners')
 
-    def __init__(self, items=None):
-        self.listeners = []
-        self.inv = _Tmp()
+    def __init__(self, items: Iterable[tuple[K, V]] | "M2M[K, V]" | None = None):
+        self.listeners: list[Any] = []
+        self.inv: M2M[V, K] = self.__class__.__new__(self.__class__)
         self.inv.listeners = []
         self.inv.inv = self
-        self.inv.__class__ = self.__class__
         if items.__class__ is self.__class__:
-            self.data = dict(
+            self.data: dict[K, set[V]] = dict(
                 [(k, set(v)) for k, v in items.data.items()])
-            self.inv.data = dict(
+            self.inv.data: dict[V, set[K]] = dict(
                 [(k, set(v)) for k, v in items.inv.data.items()])
             return
             # tolerate a little weirdness here to make M2M(other_m2m)
             # pythonic copying idiom as fast as possible
-        self.data = {}
-        self.inv.data = {}
+        self.data = {}  # type: dict[K, set[V]]
+        self.inv.data = {}  # type: dict[V, set[K]]
         if items:
             self.update(items)
 
-    def _notify_add(self, key, val):
+    def _notify_add(self, key: K, val: V) -> None:
         for listener in self.listeners:
             listener.notify_add(key, val)
         for listener in self.inv.listeners:
             listener.notify_add(val, key)
 
-    def _notify_remove(self, key, val):
+    def _notify_remove(self, key: K, val: V) -> None:
         for listener in self.listeners:
             listener.notify_remove(key, val)
         for listener in self.inv.listeners:
             listener.notify_remove(val, key)
 
-    def get(self, key, default=frozenset()):
+    def get(self, key: K, default: FrozenSet[V] = frozenset()) -> FrozenSet[V]:
         try:
             return self[key]
         except KeyError:
             return default
 
-    def getall(self, keys):
+    def getall(self, keys: Iterable[K]) -> FrozenSet[V]:
         """
         since an M2M maps a key to a set of results
         rather than a single result, unlike a normal dict
@@ -65,15 +65,15 @@ class M2M(object):
             sofar |= self.data.get(key, empty)
         return frozenset(sofar)
 
-    def pop(self, key):
+    def pop(self, key: K) -> FrozenSet[V]:
         val = frozenset(self.data[key])
         del self[key]
         return val
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: K) -> FrozenSet[V]:
         return frozenset(self.data[key])
 
-    def __setitem__(self, key, vals):
+    def __setitem__(self, key: K, vals: Iterable[V]) -> None:
         vals = set(vals)
         if key in self:
             to_remove = self.data[key] - vals
@@ -83,7 +83,7 @@ class M2M(object):
         for val in vals:
             self.add(key, val)
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: K) -> None:
         for val in self.data.pop(key):
             if self.listeners:
                 self._notify_remove(key, val)
@@ -91,7 +91,7 @@ class M2M(object):
             if not self.inv.data[val]:
                 del self.inv.data[val]
 
-    def update(self, iterable):
+    def update(self, iterable: Iterable[tuple[K, V]] | "M2M[K, V]" | dict[K, V]) -> None:
         """given an iterable of (key, val), add them all"""
         if type(iterable) is type(self):
             other = iterable
@@ -119,7 +119,7 @@ class M2M(object):
             for key, val in iterable:
                 self.add(key, val)
     
-    def only(self, keys):
+    def only(self, keys: Iterable[K]) -> "M2M[K, V]":
         """
         return a new M2M with only the data associated
         with the corresponding keys
@@ -127,7 +127,7 @@ class M2M(object):
         return M2M([
             item for item in self.iteritems() if item[0] in keys])
 
-    def add(self, key, val):
+    def add(self, key: K, val: V) -> None:
         if key not in self.data:
             self.data[key] = set()
         self.data[key].add(val)
@@ -136,7 +136,7 @@ class M2M(object):
         self.inv.data[val].add(key)
         self._notify_add(key, val)
 
-    def remove(self, key, val):
+    def remove(self, key: K, val: V) -> None:
         self.data[key].remove(val)
         if not self.data[key]:
             del self.data[key]
@@ -145,12 +145,12 @@ class M2M(object):
             del self.inv.data[val]
         self._notify_remove(key, val)
 
-    def discard(self, key, val):
+    def discard(self, key: K, val: V) -> None:
         if key not in self.data or val not in self.inv.data:
             return
         self.remove(key, val)
 
-    def replace(self, key, newkey):
+    def replace(self, key: K, newkey: K) -> None:
         """
         replace instances of key by newkey
         """
@@ -166,18 +166,18 @@ class M2M(object):
             revset.remove(key)
             revset.add(newkey)
 
-    def iteritems(self):
+    def iteritems(self) -> Iterable[Tuple[K, V]]:
         for key in self.data:
             for val in self.data[key]:
                 yield key, val
 
-    def keys(self):
+    def keys(self) -> Iterable[K]:
         return self.data.keys()
 
-    def values(self):
+    def values(self) -> Iterable[V]:
         return self.inv.data.keys()
 
-    def copy(self):
+    def copy(self) -> "M2M[K, V]":
         """
         a full copy can be done a lot faster since items don't
         need to be added one-by-one to sets
@@ -190,19 +190,19 @@ class M2M(object):
     # because it copies self.data, and all of the sets in self.data
     # as well as self.inv -- so we don't bother to override the behavior
 
-    def __contains__(self, key):
+    def __contains__(self, key: K) -> bool:
         return key in self.data
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[K]:
         return self.data.__iter__()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.data.__len__()
 
     def __eq__(self, other):
         return type(self) == type(other) and self.data == other.data
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         cn = self.__class__.__name__
         return '%s(%r)' % (cn, list(self.iteritems()))
 
@@ -301,25 +301,25 @@ class M2MChain(object):
             lhs = new.inv
         return M2MChain(m2ms, copy=False)
 
-    def __contains__(self, vals):
+    def __contains__(self, vals: Tuple[Any, ...]) -> bool:
         if type(vals) is not tuple:
             raise TypeError("expected tuple, not {!r}".format(type(vals)))
         return bool(self._roll_lhs(vals))
 
-    def add(self, *vals):
+    def add(self, *vals: Any) -> None:
         assert len(self.m2ms) + 1 == len(vals)
         val_pairs = zip(vals[:-1], vals[1:])
         for m2m, val_pair in zip(self.m2ms, val_pairs):
             m2m.add(*val_pair)
 
-    def update(self, vals_seq):
+    def update(self, vals_seq: Iterable[Tuple[Any, ...]]) -> None:
         if len(self.m2ms) == 1 and type(vals_seq) is M2M:
             self.m2ms[0].update(vals_seq)
         else:
             for vals in vals_seq:
                 self.add(*vals)
 
-    def pairs(self, start=0, end=None):
+    def pairs(self, start: int = 0, end: int | None = None) -> "M2M":
         """
         return pairs between the given indices of data
         """
@@ -331,13 +331,13 @@ class M2MChain(object):
 
     __copy__ = copy
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         return type(self) is type(other) and self.m2ms == other.m2ms
 
     def __repr__(self):
         return "M2MChain({})".format(self.m2ms)
 
-    def __nonzero__(self):
+    def __nonzero__(self) -> bool:
         try:
             next(iter(self))
             return True
@@ -346,7 +346,7 @@ class M2MChain(object):
 
     __bool__ = __nonzero__
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[Tuple[Any, ...]]:
         """
         iterate over all of the possible paths through the
         chain of many to many dicts
@@ -489,7 +489,7 @@ class M2MGraph(object):
             sofar.update(self.m2ms[edge].keys())
         return frozenset(sofar)
 
-    def pairs(self, lhs, rhs, paths=None, ignore=None):
+    def pairs(self, lhs: Any, rhs: Any, paths: Iterable[Tuple[Any, ...]] | None = None, ignore: Iterable[Any] | None = None) -> "M2M":
         """
         get all the unique pairs of values from lhs col and rhs col
 
@@ -603,7 +603,7 @@ class M2MGraph(object):
         self.m2ms.update(other.m2ms)
         self.cols.update(other.cols)
 
-    def replace_col(self, col, valmap):
+    def replace_col(self, col: Any, valmap: dict) -> None:
         """
         replace every value in col by the value in valmap
         raises KeyError if there is a value not in valmap
@@ -616,7 +616,7 @@ class M2MGraph(object):
             for oldval, newval in valmap.items():
                 m2m.replace(oldval, newval)
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         return type(self) is type(other) and self.m2ms == other.m2ms
 
     def __contains__(self, rel):

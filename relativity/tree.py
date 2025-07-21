@@ -1,3 +1,4 @@
+from typing import Any, Iterable, Iterator, Tuple
 from relativity import M2M
 
 
@@ -65,16 +66,16 @@ class M2MTree(object):
             else:
                 self.pair_counts[pair] -= 1
 
-    def __contains__(self, pair):
+    def __contains__(self, pair: Tuple[Any, Any]) -> bool:
         return pair in self.pair_counts
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Any) -> Any:
         return self.pairs[key]
 
-    def get(self, key):
+    def get(self, key: Any) -> Any:
         return self.pairs.get(key)
 
-    def iteritems(self):
+    def iteritems(self) -> Iterator[Tuple[Any, Any]]:
         return self.pairs.iteritems()
 
 
@@ -83,12 +84,12 @@ class TreeIndexer(object):
     manages construction and maintenance of trees
     """
     # TODO: can M2MGraph public API be extended to support this?
-    def __init__(self, pair_m2m_map):
+    def __init__(self, pair_m2m_map: dict) -> None:
         self.pair_m2m_map = pair_m2m_map
         self.tree_map = {}  # {(lhs, rhs): M2MTree}
         self.parents_of = {id(m2m): [] for m2m in pair_m2m_map.values()}
 
-    def add_index(self, *cols):
+    def add_index(self, *cols: Any) -> None:
         # this would synergize well with find_paths from M2MGraph
         pairs = tuple(zip(cols[:-1], cols[1:]))
         for pair in pairs:
@@ -96,7 +97,7 @@ class TreeIndexer(object):
         assert len(pairs) >= 2
         self._add_index2(pairs)
 
-    def _add_index2(self, pairs):
+    def _add_index2(self, pairs: Tuple[Tuple[Any, Any], ...]) -> M2MTree:
         cur_col_pair = (pairs[0][0], pairs[-1][1])
         if cur_col_pair in self:
             return self[cur_col_pair]
@@ -117,20 +118,20 @@ class TreeIndexer(object):
             self.parents_of[id(right)].append(ret)
         return ret
 
-    def notify_add(self, rel, a, b):
+    def notify_add(self, rel: Tuple[Any, Any], a: Any, b: Any) -> None:
         m2m = self.pair_m2m_map[rel]
         for parent in self.parents_of[id(m2m)]:
             parent.notify_add(m2m, a, b)
 
-    def notify_remove(self, rel, a, b):
+    def notify_remove(self, rel: Tuple[Any, Any], a: Any, b: Any) -> None:
         m2m = self.pair_m2m_map[rel]
         for parent in self.parents_of[id(m2m)]:
             parent.notify_remove(m2m, a, b)
 
-    def __getitem__(self, pair):
+    def __getitem__(self, pair: Tuple[Any, Any]) -> Any:
         if pair in self.pair_m2m_map:
             return self.pair_m2m_map[pair]
         return self.tree_map[pair]
 
-    def __contains__(self, pair):
+    def __contains__(self, pair: Tuple[Any, Any]) -> bool:
         return pair in self.pair_m2m_map or pair in self.tree_map
