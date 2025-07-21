@@ -6,14 +6,15 @@ The underlying data structure is a list of M2Ms
 """
 import itertools
 
+from typing import Iterable, FrozenSet, Tuple, Any
 from relativity import M2M
 
 
-def star(*m2ms):
+def star(*m2ms: M2M) -> 'Star':
     return Star(m2ms, copy=False)
 
 class Star(object):
-    def __init__(self, m2ms, copy=True):
+    def __init__(self, m2ms: Iterable[M2M], copy: bool = True) -> None:
         # TODO: typecheck
         if m2ms.__class__ is self.__class__:
             m2ms = m2ms.m2ms
@@ -22,11 +23,11 @@ class Star(object):
         else:
             self.m2ms = m2ms
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> FrozenSet[Tuple[Any, ...]]:
         return frozenset(itertools.product(*[
             m2m.get(key) for m2m in self.m2ms]))
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[Tuple[Any, ...]]:
         keys = set()
         for m2m in self.m2ms:
             keys.update(m2m)
