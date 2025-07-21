@@ -424,7 +424,7 @@ class M2MGraph(object):
         rel_data_map -- { (lhs_col, rhs_col): {lhs_val: rhs_val} }
         """
         # TODO: better checking
-        cls(rel_data_map.keys(), rel_data_map)
+        return cls(rel_data_map.keys(), rel_data_map)
 
     def __getitem__(self, key):
         """
