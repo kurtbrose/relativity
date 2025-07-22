@@ -471,7 +471,7 @@ Coming back to the students-and-classes example:
 Better Together
 """""""""""""""
 
-At a low-level, a Pandas_ ``Series`` and a Relaitivity ``M2M`` can
+At a low-level, a Pandas_ ``Series`` and a Relativity ``M2M`` can
 both represent multiple values per key, so it is easy to convert
 between the two.
 
