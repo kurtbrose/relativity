@@ -84,6 +84,13 @@ def test_m2mchain_basic():
     assert set(m2ms.only(('april', 'brad'))) == set([
         ('april', 'alice', 'anna'),
         ('brad', 'brent', 'bruce')])
+    # new: filter each column independently
+    assert set(m2ms.only([
+        {'april', 'cathy'},
+        {'alice', 'cynthia'},
+        {'anna', 'claire'}])) == set([
+        ('april', 'alice', 'anna'),
+        ('cathy', 'cynthia', 'claire')])
 
 
 # canonical example: (city, fast food franchise, food type)
