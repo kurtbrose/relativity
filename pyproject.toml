@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "relativity"
+version = "20.1.1dev"
+description = "Relational object sets."
+readme = "README.rst"
+license = {text = "MIT"}
+authors = [{name = "Kurt Rose", email = "kurt@kurtrose.com"}]
+requires-python = ">=3.10"
+classifiers = [
+    "Topic :: Utilities",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+[project.urls]
+Homepage = "https://github.com/kurtbrose/relativity"
+
+[tool.setuptools.packages.find]
+include = ["relativity", "relativity.tests"]
+
+[tool.setuptools]
+include-package-data = true
+zip-safe = false
