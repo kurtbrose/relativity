@@ -140,9 +140,6 @@ def test_m2mgraph_basic():
     assert ('a', 'c') in m2mg
 
 
-#TODO: test M2MGraph.add_rel
-
-
 def test_listeners():
     """
     test that listeners work okay by ensuring that
