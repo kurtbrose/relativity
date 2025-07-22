@@ -280,14 +280,58 @@ class M2MChain(object):
         else:
             self.m2ms = m2ms
 
-    # TODO: take multiple keysets (one per column)
     def only(self, keyset):
         """
-        returns a chain that is filtered so that only keys in keyset are kept
+        returns a chain that is filtered so that only keys in ``keyset`` are
+        kept. ``keyset`` may be a single iterable of keys for the first column
+        (existing behaviour) or an iterable of keysets matching the width of the
+        chain (one keyset per column).
         """
-        m2ms = [self.m2ms[0].only(keyset)]
-        for m2m in self.m2ms[1:]:
-            m2ms.append(m2m.only(m2ms[-1].values()))
+
+        # detect ``keyset`` as a sequence of keysets.  A multi-keyset must have
+        # exactly one entry for each column of data (``len(self.m2ms) + 1``) and
+        # the entries themselves should be iterable containers (strings are
+        # treated as single keysets for backwards compatibility).
+        multi = False
+        if isinstance(keyset, (list, tuple)) and len(keyset) == len(self.m2ms) + 1:
+            if all(not isinstance(ks, (str, bytes)) for ks in keyset):
+                multi = True
+
+        if not multi:
+            keysets = [keyset] + [None] * len(self.m2ms)
+        else:
+            keysets = list(keyset)
+
+        m2ms = []
+
+        # initial set of allowed keys for the first column
+        cur_keys = keysets[0]
+        if cur_keys is None:
+            cur_keys = self.m2ms[0].keys()
+        m2m = self.m2ms[0].only(cur_keys)
+
+        # optionally restrict values of the first relationship
+        if keysets[1] is not None:
+            m2m = m2m.inv.only(keysets[1]).inv
+            cur_keys = keysets[1]
+        else:
+            cur_keys = m2m.values()
+        m2ms.append(m2m)
+
+        for idx, rel in enumerate(self.m2ms[1:], start=1):
+            lhs_keys = cur_keys
+            if lhs_keys is None:
+                lhs_keys = rel.keys()
+            m2m = rel.only(lhs_keys)
+
+            next_keys = keysets[idx + 1] if idx + 1 < len(keysets) else None
+            if next_keys is not None:
+                m2m = m2m.inv.only(next_keys).inv
+                cur_keys = next_keys
+            else:
+                cur_keys = m2m.values()
+            m2ms.append(m2m)
+
         return M2MChain(m2ms, copy=False)
 
     def _roll_lhs(self, key):
