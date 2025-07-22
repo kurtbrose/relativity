@@ -8,16 +8,13 @@ language: python
 
 matrix:
   include:
-    - python: "2.7"
-      env: TOXENV=py27
-    - python: "3.5"
-      env: TOXENV=py35
-    - python: "3.7"
-      dist: xenial
-      env: TOXENV=py37
-    - python: "pypy"
+    - python: "3.10"
+      env: TOXENV=py310
+    - python: "3.11"
+      env: TOXENV=py311
+    - python: "pypy-3.10"
       env: TOXENV=pypy
-    - python: "2.7"
+    - python: "3.10"
       env: TOXENV=packaging
 
 
