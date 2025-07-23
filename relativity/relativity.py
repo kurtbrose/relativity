@@ -688,6 +688,18 @@ class M2MGraph(object):
         replace every value in col by the value in valmap
         raises KeyError if there is a value not in valmap
         """
+        current_vals = set()
+        for key in self.cols[col]:
+            if col == key[0]:
+                m2m = self.m2ms[key]
+            else:
+                m2m = self.m2ms[key].inv
+            current_vals.update(m2m.keys())
+
+        missing = current_vals - set(valmap)
+        if missing:
+            raise KeyError("missing mappings for values: {}".format(sorted(missing)))
+
         for key in self.cols[col]:
             if col == key[0]:
                 m2m = self.m2ms[key]

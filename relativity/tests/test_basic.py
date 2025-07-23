@@ -196,3 +196,10 @@ def test_m2mgraph_pairs_no_path_raises_valueerror():
     g = M2MGraph([('a', 'b'), ('c', 'd')])
     with pytest.raises(ValueError):
         g.pairs('a', 'd')
+
+
+def test_replace_col_raises_keyerror_when_mapping_incomplete():
+    g = M2MGraph([('a', 'b')])
+    g['a', 'b'].update([(1, 2), (3, 4)])
+    with pytest.raises(KeyError):
+        g.replace_col('a', {1: 'x'})
