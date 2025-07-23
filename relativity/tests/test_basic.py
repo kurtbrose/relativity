@@ -1,5 +1,7 @@
 import copy
 
+import pytest
+
 
 from relativity import M2M, M2MChain, M2MGraph
 from relativity.tree import M2MTree
@@ -182,3 +184,15 @@ def test_from_rel_data_map_returns_graph():
     rel_data_map = {('a', 'b'): M2M([(1, 2)]), ('b', 'c'): M2M([(2, 3)])}
     g = M2MGraph.from_rel_data_map(rel_data_map)
     assert isinstance(g, M2MGraph)
+
+
+def test_m2mgraph_pairs_unknown_column_raises_keyerror():
+    g = M2MGraph([('a', 'b')])
+    with pytest.raises(KeyError):
+        g.pairs('a', 'c')
+
+
+def test_m2mgraph_pairs_no_path_raises_valueerror():
+    g = M2MGraph([('a', 'b'), ('c', 'd')])
+    with pytest.raises(ValueError):
+        g.pairs('a', 'd')
