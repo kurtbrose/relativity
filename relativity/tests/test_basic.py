@@ -203,3 +203,15 @@ def test_replace_col_raises_keyerror_when_mapping_incomplete():
     g['a', 'b'].update([(1, 2), (3, 4)])
     with pytest.raises(KeyError):
         g.replace_col('a', {1: 'x'})
+
+
+def test_m2mgraph_add_no_relationship_raises_valueerror():
+    g = M2MGraph([('a', 'b'), ('b', 'c')])
+    with pytest.raises(ValueError):
+        g.add({'a': 1, 'c': 2})
+
+
+def test_m2mgraph_add_unknown_column_asserts():
+    g = M2MGraph([('a', 'b')])
+    with pytest.raises(AssertionError):
+        g.add({'a': 1, 'c': 2})
