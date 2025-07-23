@@ -142,16 +142,23 @@ class M2M(dict, Generic[K, V]):
         """
         if key not in self:
             return
-        dict.__setitem__(self, newkey, dict.pop(self, key))
-        fwdset = dict.__getitem__(self, newkey)
-        if self.listeners:
-            for val in fwdset:
+        vals = dict.pop(self, key)
+        if newkey in self:
+            dest_set = dict.__getitem__(self, newkey)
+        else:
+            dest_set = set()
+            dict.__setitem__(self, newkey, dest_set)
+
+        for val in vals:
+            if self.listeners:
                 self._notify_remove(key, val)
-                self._notify_add(newkey, val)
-        for val in fwdset:
             revset = dict.__getitem__(self.inv, val)
             revset.remove(key)
             revset.add(newkey)
+            if val not in dest_set:
+                dest_set.add(val)
+                if self.listeners:
+                    self._notify_add(newkey, val)
 
     def iteritems(self) -> Iterable[Tuple[K, V]]:
         for key in self:
