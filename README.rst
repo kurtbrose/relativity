@@ -515,7 +515,7 @@ Underneath, both are backed by ``dict``.
 Documentation
 -------------
 
-The full documentation is hosted on Read the Docs_.
+The full documentation is hosted on `Read the Docs`_.
 
 
 .. _NetworkX: https://networkx.github.io/
