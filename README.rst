@@ -512,6 +512,12 @@ wehere the ``M2M`` represents a single relationship, and ``M2MChain``,
 
 Underneath, both are backed by ``dict``.
 
+Documentation
+-------------
+
+The full documentation is hosted on `Read the Docs`_.
+
 
 .. _NetworkX: https://networkx.github.io/
+.. _Read the Docs: https://relativity.readthedocs.io/
 

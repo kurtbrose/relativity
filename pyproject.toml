@@ -22,6 +22,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/kurtbrose/relativity"
+Documentation = "https://relativity.readthedocs.io"
 
 [tool.setuptools.packages.find]
 include = ["relativity", "relativity.tests"]
