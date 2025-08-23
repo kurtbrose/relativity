@@ -15,7 +15,8 @@ class Index:
 
 @dataclass
 class OrderedIndex(Index):
-    keys: list[object] = field(default_factory=list)
+    data: dict[object, list[int]]
+    keys: list[tuple[object, int]] = field(default_factory=list)
 
 
 __all__ = ["Index", "OrderedIndex"]

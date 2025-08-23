@@ -97,8 +97,8 @@ def test_ordered_index_updates_and_queries():
 
     pred_gt = Student.score > 15
     pred_lt = Student.score < 25
-    assert set(schema.all(Student).filter(pred_gt)) == {b, c}
-    assert set(schema.all(Student).filter(pred_lt)) == {a, b}
+    assert list(schema.all(Student).filter(pred_gt)) == [b, c]
+    assert list(schema.all(Student).filter(pred_lt)) == [a, b]
 
     schema.remove(b)
     assert list(schema.all(Student).filter(pred_gt)) == [c]
@@ -159,4 +159,22 @@ def test_composite_ordered_index_range_queries():
         schema.add(s)
 
     pred = Tuple(Student.score, Student.name) >= (20, "b")
-    assert set(schema.all(Student).filter(pred)) == {b, c}
+    assert list(schema.all(Student).filter(pred)) == [b, c]
+
+
+def test_order_by_uses_tiebreaker():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+        score: int
+
+    schema.ordered_index(Student.score)
+
+    a = Student("a", 10)
+    b = Student("b", 10)
+    c = Student("c", 5)
+    for s in (a, b, c):
+        schema.add(s)
+
+    assert list(schema.all(Student).order_by(Student.score)) == [c, a, b]
