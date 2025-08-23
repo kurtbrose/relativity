@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from relativity.schema import Schema
+from relativity.schema import Schema, Table
 
 
 def test_schema_storage_and_iteration():
@@ -36,3 +36,12 @@ def test_table_is_dataclass_and_identity_based():
 
     assert a != b
     assert len({a, b}) == 2
+
+
+def test_shim_removed_from_mro():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+
+    assert Student.__mro__ == (Student, Table, object)

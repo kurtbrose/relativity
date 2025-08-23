@@ -10,12 +10,18 @@ class Table:
     """Base class for schema-bound tables."""
 
     __schema__: ClassVar["Schema"]
+    _schema_ctx: ClassVar["Schema | None"] = None
 
-    def __init_subclass__(cls, *, schema: "Schema", **kw) -> None:  # type: ignore[override]
+    def __init_subclass__(cls, *, schema: "Schema" | None = None, **kw) -> None:  # type: ignore[override]
         super().__init_subclass__(**kw)
+        if schema is None:
+            schema = Table._schema_ctx
+        if schema is None:  # pragma: no cover - defensive
+            raise TypeError("schema.Table subclass without schema")
         dataclass(eq=False, frozen=True)(cls)
         cls.__schema__ = schema
         schema._tables.setdefault(cls, {})
+        Table._schema_ctx = None
 
 
 class Schema:
@@ -24,13 +30,14 @@ class Schema:
 
     @property
     def Table(self) -> type[Table]:
-        schema = self
+        Table._schema_ctx = self
 
-        class _Bound(Table, schema=schema):  # type: ignore[misc]
-            def __init_subclass__(cls, **kw) -> None:
-                super().__init_subclass__(schema=schema, **kw)
+        class _Shim:
+            @staticmethod
+            def __mro_entries__(bases):  # drop self, keep Table
+                return (Table,)
 
-        return _Bound
+        return _Shim()  # type: ignore[misc]
 
     def add(self, row: object) -> None:
         self._tables[type(row)][id(row)] = row
