@@ -11,6 +11,7 @@ class Index:
     table: type["Table"]
     data: dict[object, set["Table"]]
     unique: bool = False
+    where: Expr | None = None
 
 
 @dataclass

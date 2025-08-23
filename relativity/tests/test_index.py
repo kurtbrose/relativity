@@ -278,3 +278,60 @@ def test_equality_join_uses_index():
     res = list(schema.all(Student, Enrollment).filter(join_pred))
     assert res == [(alice, enr1), (bob, enr2)]
     assert join_pred.count == 0
+
+
+def test_partial_index_requires_predicate_for_planner():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+        status: str
+
+    schema.index(Student.name, where=Student.status == "OPEN")
+
+    a = Student("a", "OPEN")
+    b = Student("a", "CLOSED")
+    c = Student("b", "OPEN")
+    for s in (a, b, c):
+        schema.add(s)
+
+    expr = CountingExpr(Student.name == "a")
+    list(schema.all(Student).filter(expr))
+    assert expr.count == 3
+
+    expr2 = CountingExpr(Student.name == "a")
+    list(schema.all(Student).filter(expr2, Student.status == "OPEN"))
+    assert expr2.count == 0
+
+
+def test_partial_unique_index_enforces_predicate():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+        status: str
+
+    schema.index(Student.name, unique=True, where=Student.status == "OPEN")
+    schema.add(Student("a", "OPEN"))
+    schema.add(Student("a", "CLOSED"))
+    with pytest.raises(KeyError):
+        schema.add(Student("a", "OPEN"))
+
+
+def test_covering_predicate_uses_bool_index():
+    schema = Schema()
+
+    class Student(schema.Table):
+        status: str
+
+    schema.add(Student("OPEN"))
+    schema.add(Student("CLOSED"))
+
+    pred = CountingExpr(Student.status == "OPEN")
+    list(schema.all(Student).filter(pred))
+    assert pred.count == 2
+
+    schema.index(pred)
+    pred.count = 0
+    list(schema.all(Student).filter(pred))
+    assert pred.count == 0
