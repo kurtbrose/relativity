@@ -56,3 +56,15 @@ def test_query_planner_uses_index():
     expr2 = CountingExpr(Student.name == "a")
     list(schema.all(Student).filter(expr2))
     assert expr2.count == 0
+
+
+def test_unique_index_rejects_duplicate_add():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+
+    schema.index(Student.name, unique=True)
+    schema.add(Student("a"))
+    with pytest.raises(KeyError):
+        schema.add(Student("a"))

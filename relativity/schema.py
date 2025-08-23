@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from itertools import product
 from typing import ClassVar, Iterable, Iterator, Sequence
@@ -38,10 +39,18 @@ class Table:
         Table._schema_ctx = None
 
 
+@dataclass
+class Index:
+    expr: "Expr"
+    table: type[object]
+    data: dict[object, set[object]]
+    unique: bool = False
+
+
 class Schema:
     def __init__(self) -> None:
         self._tables: dict[type[object], dict[int, object]] = {}
-        self._indices: dict[Expr, tuple[type[object], dict[object, set[object]]]] = {}
+        self._indices: dict[Expr, Index] = {}
 
     @property
     def Table(self) -> type[Table]:
@@ -55,31 +64,36 @@ class Schema:
         return _Shim()  # type: ignore[misc]
 
     def add(self, row: object) -> None:
-        self._tables[type(row)][id(row)] = row
-        for expr, (tbl, idx) in self._indices.items():
-            base = getattr(tbl, "__table__", tbl)
+        vals: list[tuple[Index, object]] = []
+        for idx in self._indices.values():
+            base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
-                val = expr.eval({tbl: row})
-                idx.setdefault(val, set()).add(row)
+                val = idx.expr.eval({idx.table: row})
+                if idx.unique and idx.data.get(val):
+                    raise KeyError("duplicate key for unique index")
+                vals.append((idx, val))
+        self._tables[type(row)][id(row)] = row
+        for idx, val in vals:
+            idx.data.setdefault(val, set()).add(row)
 
     def remove(self, row: object) -> None:
         del self._tables[type(row)][id(row)]
-        for expr, (tbl, idx) in self._indices.items():
-            base = getattr(tbl, "__table__", tbl)
+        for idx in self._indices.values():
+            base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
-                val = expr.eval({tbl: row})
-                bucket = idx.get(val)
+                val = idx.expr.eval({idx.table: row})
+                bucket = idx.data.get(val)
                 if bucket is not None:
                     bucket.discard(row)
                     if not bucket:
-                        idx.pop(val, None)
+                        idx.data.pop(val, None)
 
     def all(self, *tables: type[object]) -> "RowStream":
         if not tables:
             raise TypeError("Schema.all() requires at least one table")
         return RowStream(self, tables)
 
-    def index(self, expr: Expr) -> None:
+    def index(self, expr: Expr, *, unique: bool = False) -> Index:
         tables = _tables_in_expr(expr)
         if len(tables) != 1:
             raise TypeError("index expressions must reference exactly one table")
@@ -88,8 +102,26 @@ class Schema:
         data: dict[object, set[object]] = {}
         for row in self._tables.get(base, {}).values():
             val = expr.eval({tbl: row})
-            data.setdefault(val, set()).add(row)
-        self._indices[expr] = (tbl, data)
+            bucket = data.setdefault(val, set())
+            bucket.add(row)
+            if unique and len(bucket) > 1:
+                raise KeyError("non-unique value for unique index")
+        idx = Index(expr, tbl, data, unique)
+        self._indices[expr] = idx
+        return idx
+
+    def replace(self, row: object, **changes: object) -> object:
+        new_row = dataclasses.replace(row, **changes)
+        for idx in self._indices.values():
+            base = getattr(idx.table, "__table__", idx.table)
+            if base is type(row):
+                val = idx.expr.eval({idx.table: new_row})
+                bucket = idx.data.get(val, set())
+                if idx.unique and bucket and bucket != {row}:
+                    raise KeyError("duplicate key for unique index")
+        self.remove(row)
+        self.add(new_row)
+        return new_row
 
 class Expr:
     def __and__(self, other: "Expr") -> "Expr":
@@ -198,7 +230,7 @@ class RowStream(Iterable[object]):
                     for expr, other in pairs:
                         idx = self._schema._indices.get(expr)
                         if idx:
-                            tbl, rows = idx
+                            tbl, rows = idx.table, idx.data
                             idx_base = getattr(tbl, "__table__", tbl)
                             if idx_base is base and not isinstance(other, Expr):
                                 bucket = rows.get(other, set())
@@ -210,7 +242,7 @@ class RowStream(Iterable[object]):
                         break
                 idx = self._schema._indices.get(pred)
                 if idx:
-                    tbl, rows = idx
+                    tbl, rows = idx.table, idx.data
                     idx_base = getattr(tbl, "__table__", tbl)
                     if idx_base is base:
                         bucket = rows.get(True, set())
