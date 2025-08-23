@@ -41,7 +41,7 @@ class Table:
 class Schema:
     def __init__(self) -> None:
         self._tables: dict[type[object], dict[int, object]] = {}
-        self._indices: dict[Expr, tuple[type[object], dict[object, dict[int, object]]]] = {}
+        self._indices: dict[Expr, tuple[type[object], dict[object, set[object]]]] = {}
 
     @property
     def Table(self) -> type[Table]:
@@ -60,7 +60,7 @@ class Schema:
             base = getattr(tbl, "__table__", tbl)
             if base is type(row):
                 val = expr.eval({tbl: row})
-                idx.setdefault(val, {})[id(row)] = row
+                idx.setdefault(val, set()).add(row)
 
     def remove(self, row: object) -> None:
         del self._tables[type(row)][id(row)]
@@ -70,7 +70,7 @@ class Schema:
                 val = expr.eval({tbl: row})
                 bucket = idx.get(val)
                 if bucket is not None:
-                    bucket.pop(id(row), None)
+                    bucket.discard(row)
                     if not bucket:
                         idx.pop(val, None)
 
@@ -85,10 +85,10 @@ class Schema:
             raise TypeError("index expressions must reference exactly one table")
         tbl = tables.pop()
         base = getattr(tbl, "__table__", tbl)
-        data: dict[object, dict[int, object]] = {}
-        for rid, row in self._tables.get(base, {}).items():
+        data: dict[object, set[object]] = {}
+        for row in self._tables.get(base, {}).values():
             val = expr.eval({tbl: row})
-            data.setdefault(val, {})[rid] = row
+            data.setdefault(val, set()).add(row)
         self._indices[expr] = (tbl, data)
 
 class Expr:
@@ -105,24 +105,22 @@ class Expr:
         raise NotImplementedError
 
 
+@dataclass(frozen=True)
 class Column(Expr):
-    def __init__(self, table: type[object], name: str) -> None:
-        self.table = table
-        self.name = name
+    table: type[object]
+    name: str
 
     def __get__(self, inst: object | None, owner: type[object]) -> object:
         if inst is None:
             return self
         return inst.__dict__[self.name]
 
-    def __eq__(self, other: object) -> "Eq":
+    def __eq__(self, other: object) -> "Eq":  # type: ignore[override]
         return Eq(self, other)
 
     def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - trivial
         row = env[self.table]
         return getattr(row, self.name)
-
-    __hash__ = object.__hash__
 
 
 def _value(val: object, env: dict[type[object], object]) -> object:
@@ -143,36 +141,36 @@ def _tables_in_expr(expr: Expr) -> set[type[object]]:
     return set()
 
 
+@dataclass(frozen=True)
 class Eq(Expr):
-    def __init__(self, left: object, right: object) -> None:
-        self.left = left
-        self.right = right
+    left: object
+    right: object
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return _value(self.left, env) == _value(self.right, env)
 
 
+@dataclass(frozen=True)
 class And(Expr):
-    def __init__(self, left: Expr, right: Expr) -> None:
-        self.left = left
-        self.right = right
+    left: Expr
+    right: Expr
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return self.left.eval(env) and self.right.eval(env)
 
 
+@dataclass(frozen=True)
 class Or(Expr):
-    def __init__(self, left: Expr, right: Expr) -> None:
-        self.left = left
-        self.right = right
+    left: Expr
+    right: Expr
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return self.left.eval(env) or self.right.eval(env)
 
 
+@dataclass(frozen=True)
 class Not(Expr):
-    def __init__(self, expr: Expr) -> None:
-        self.expr = expr
+    expr: Expr
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return not self.expr.eval(env)
@@ -203,8 +201,8 @@ class RowStream(Iterable[object]):
                             tbl, rows = idx
                             idx_base = getattr(tbl, "__table__", tbl)
                             if idx_base is base and not isinstance(other, Expr):
-                                bucket = rows.get(other, {})
-                                source = list(bucket.values())
+                                bucket = rows.get(other, set())
+                                source = list(bucket)
                                 preds.remove(pred)
                                 used = True
                                 break
@@ -215,8 +213,8 @@ class RowStream(Iterable[object]):
                     tbl, rows = idx
                     idx_base = getattr(tbl, "__table__", tbl)
                     if idx_base is base:
-                        bucket = rows.get(True, {})
-                        source = list(bucket.values())
+                        bucket = rows.get(True, set())
+                        source = list(bucket)
                         preds.remove(pred)
                         break
             if source is None:

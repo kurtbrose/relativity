@@ -5,11 +5,11 @@ from relativity.schema import Schema, Table, Eq
 
 class CountingExpr(Eq):
     def __init__(self, base):
-        self.count = 0
+        object.__setattr__(self, "count", 0)
         super().__init__(base.left, base.right)
 
     def eval(self, env):
-        self.count += 1
+        object.__setattr__(self, "count", self.count + 1)
         return super().eval(env)
 
 
