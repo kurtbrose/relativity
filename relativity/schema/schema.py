@@ -98,10 +98,13 @@ class Schema:
         self._all_rows[row_id] = row
         self._row_ids[row] = row_id
         for idx, val in vals:
-            if isinstance(idx, OrderedIndex) and val not in idx.data:
-                insort(idx.keys, val)
-            bucket = idx.data.setdefault(val, set())
-            bucket.add(row)
+            if isinstance(idx, OrderedIndex):
+                insort(idx.keys, (val, row_id))
+                bucket = idx.data.setdefault(val, [])
+                insort(bucket, row_id)
+            else:
+                bucket = idx.data.setdefault(val, set())
+                bucket.add(row)
 
     def remove(self, row: Table, *, check_refs: bool = True) -> None:
         row_id = self._row_ids[row]
@@ -127,13 +130,20 @@ class Schema:
                 val = idx.expr.eval({idx.table: row})
                 bucket = idx.data.get(val)
                 if bucket is not None:
-                    bucket.discard(row)
-                    if not bucket:
-                        idx.data.pop(val, None)
-                        if isinstance(idx, OrderedIndex):
-                            pos = bisect_left(idx.keys, val)
-                            if pos < len(idx.keys) and idx.keys[pos] == val:
-                                idx.keys.pop(pos)
+                    if isinstance(idx, OrderedIndex):
+                        row_id2 = row_id
+                        pos = bisect_left(bucket, row_id2)
+                        if pos < len(bucket) and bucket[pos] == row_id2:
+                            bucket.pop(pos)
+                        if not bucket:
+                            idx.data.pop(val, None)
+                        pos = bisect_left(idx.keys, (val, row_id2))
+                        if pos < len(idx.keys) and idx.keys[pos] == (val, row_id2):
+                            idx.keys.pop(pos)
+                    else:
+                        bucket.discard(row)
+                        if not bucket:
+                            idx.data.pop(val, None)
 
     def all(self, *tables: type[Table]) -> "RowStream":
         if not tables:
@@ -170,15 +180,20 @@ class Schema:
             raise TypeError("index expressions must reference exactly one table")
         tbl = tables.pop()
         base = getattr(tbl, "__table__", tbl)
-        data: dict[object, set[Table]] = {}
+        data: dict[object, list[int]] = {}
+        pairs: list[tuple[object, int]] = []
         for row in self._tables.get(base, set()):
             val = expr.eval({tbl: row})
-            bucket = data.setdefault(val, set())
-            bucket.add(row)
+            row_id = self._row_ids[row]
+            bucket = data.setdefault(val, [])
+            bucket.append(row_id)
             if unique and len(bucket) > 1:
                 raise KeyError("non-unique value for unique index")
-        keys = sorted(data.keys())
-        idx = OrderedIndex(expr, tbl, data, unique=unique, keys=keys)
+            pairs.append((val, row_id))
+        for bucket in data.values():
+            bucket.sort()
+        pairs.sort()
+        idx = OrderedIndex(expr, tbl, data, unique=unique, keys=pairs)
         self._indices[expr] = idx
         return idx
 
@@ -189,9 +204,14 @@ class Schema:
             base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
                 val = idx.expr.eval({idx.table: new_row})
-                bucket = idx.data.get(val, set())
-                if idx.unique and bucket and bucket != {row}:
-                    raise KeyError("duplicate key for unique index")
+                if isinstance(idx, OrderedIndex):
+                    bucket = idx.data.get(val, [])
+                    if idx.unique and bucket and not (len(bucket) == 1 and bucket[0] == row_id):
+                        raise KeyError("duplicate key for unique index")
+                else:
+                    bucket = idx.data.get(val, set())
+                    if idx.unique and bucket and bucket != {row}:
+                        raise KeyError("duplicate key for unique index")
         self.remove(row, check_refs=False)
         self.add(new_row, row_id)
         return new_row
