@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from bisect import bisect_left, bisect_right
 from itertools import product
-from typing import Iterable, Iterator, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 import sys
 
 from .expr import Expr, Eq, Lt, Le, Gt, Ge, _value
@@ -10,6 +11,158 @@ from .index import OrderedIndex
 
 if True:  # pragma: no cover - for type checking without runtime import
     from .schema import Schema, Table  # type: ignore
+
+
+@dataclass(frozen=True)
+class SourcePlan:
+    table: type["Table"]
+    scan: "Scan"
+
+
+class Scan:
+    def run(self, schema: "Schema") -> list[object]:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class FullScan(Scan):
+    base: type
+
+    def run(self, s: "Schema") -> list[object]:
+        row_ids = s._row_ids
+        return sorted(s._tables.get(self.base, set()), key=row_ids.__getitem__)
+
+
+@dataclass(frozen=True)
+class EqScan(Scan):
+    base: type
+    index_expr: Expr
+    key: Any
+    ordered: bool
+
+    def run(self, s: "Schema") -> list[object]:
+        row_ids = s._row_ids
+        idx = s._indices[self.index_expr]
+        if self.ordered:
+            ids = idx.data.get(self.key, [])
+            return [s._all_rows[i] for i in ids]
+        bucket = idx.data.get(self.key, set())
+        return sorted(bucket, key=row_ids.__getitem__)
+
+
+@dataclass(frozen=True)
+class RangeScan(Scan):
+    base: type
+    index: OrderedIndex
+    lo: tuple[Any, int] | None
+    hi: tuple[Any, int] | None
+
+    def run(self, s: "Schema") -> list[object]:
+        keys = self.index.keys
+        lo_pos = 0 if self.lo is None else bisect_left(keys, self.lo)
+        hi_pos = len(keys) if self.hi is None else bisect_right(keys, self.hi)
+        return [s._all_rows[rid] for _, rid in keys[lo_pos:hi_pos]]
+
+
+@dataclass(frozen=True)
+class BoolScan(Scan):
+    base: type
+    index_expr: Expr
+
+    def run(self, s: "Schema") -> list[object]:
+        row_ids = s._row_ids
+        idx = s._indices[self.index_expr]
+        bucket = idx.data.get(True, set())
+        return sorted(bucket, key=row_ids.__getitem__)
+
+
+class Planner:
+    def __init__(self, schema: "Schema") -> None:
+        self.s = schema
+
+    def plan(
+        self, tables: Sequence[type["Table"]], preds: Sequence[Expr]
+    ) -> tuple[list[SourcePlan], list[Expr]]:
+        remaining = list(preds)
+        plans: list[SourcePlan] = []
+        for t in tables:
+            base = getattr(t, "__table__", t)
+            scan = self._pick_scan_for_table(base, remaining)
+            plans.append(SourcePlan(t, scan))
+        return plans, remaining
+
+    def _pick_scan_for_table(self, base: type, preds: list[Expr]) -> Scan:
+        for pred in list(preds):
+            if isinstance(pred, Eq):
+                for expr, other in ((pred.left, pred.right), (pred.right, pred.left)):
+                    idx = self.s._indices.get(expr)
+                    if idx and self._same_base(idx.table, base) and not isinstance(other, Expr) and not isinstance(other, type):
+                        key = _value(other, {})
+                        ordered = isinstance(idx, OrderedIndex)
+                        preds.remove(pred)
+                        return EqScan(base, expr, key, ordered)
+        for pred in list(preds):
+            r = self._range_scan_for_pred(base, pred)
+            if r is not None:
+                preds.remove(pred)
+                return r
+        for pred in list(preds):
+            idx = self.s._indices.get(pred)
+            if idx and self._same_base(idx.table, base):
+                preds.remove(pred)
+                return BoolScan(base, pred)
+        return FullScan(base)
+
+    def _range_scan_for_pred(self, base: type, pred: Expr) -> RangeScan | None:
+        def make(index: OrderedIndex, lo, hi) -> RangeScan:
+            return RangeScan(base, index, lo, hi)
+
+        def ordered_idx(expr: Expr) -> OrderedIndex | None:
+            idx = self.s._indices.get(expr)
+            return idx if isinstance(idx, OrderedIndex) and self._same_base(idx.table, base) else None
+
+        if isinstance(pred, Lt):
+            idx = ordered_idx(pred.left)
+            if idx and not isinstance(pred.right, (Expr, type)):
+                key = _value(pred.right, {})
+                return make(idx, None, (key, sys.maxsize - 1))
+            idx = ordered_idx(pred.right)
+            if idx and not isinstance(pred.left, (Expr, type)):
+                key = _value(pred.left, {})
+                return make(idx, (key, 0), None)
+        if isinstance(pred, Le):
+            idx = ordered_idx(pred.left)
+            if idx and not isinstance(pred.right, (Expr, type)):
+                key = _value(pred.right, {})
+                return make(idx, None, (key, sys.maxsize))
+            idx = ordered_idx(pred.right)
+            if idx and not isinstance(pred.left, (Expr, type)):
+                key = _value(pred.left, {})
+                return make(idx, (key, 0), None)
+        if isinstance(pred, Gt):
+            idx = ordered_idx(pred.left)
+            if idx and not isinstance(pred.right, (Expr, type)):
+                key = _value(pred.right, {})
+                return make(idx, (key, sys.maxsize), None)
+            idx = ordered_idx(pred.right)
+            if idx and not isinstance(pred.left, (Expr, type)):
+                key = _value(pred.left, {})
+                return make(idx, None, (key, 0))
+        if isinstance(pred, Ge):
+            idx = ordered_idx(pred.left)
+            if idx and not isinstance(pred.right, (Expr, type)):
+                key = _value(pred.right, {})
+                return make(idx, (key, 0), None)
+            idx = ordered_idx(pred.right)
+            if idx and not isinstance(pred.left, (Expr, type)):
+                key = _value(pred.left, {})
+                return make(idx, None, (key, sys.maxsize))
+        return None
+
+    @staticmethod
+    def _same_base(tbl: type, base: type) -> bool:
+        idx_base = getattr(tbl, "__table__", tbl)
+        return idx_base is base
 
 
 class RowStream(Iterable[object]):
@@ -34,93 +187,29 @@ class RowStream(Iterable[object]):
         return RowStream(self._schema, self._tables, self._preds, (key, id))
 
     def __iter__(self) -> Iterator[object]:
-        preds = list(self._preds)
-        sources = []
+        planner = Planner(self._schema)
+        plans, residual = planner.plan(self._tables, self._preds)
+
+        sources: list[list[object]] = [p.scan.run(self._schema) for p in plans]
+
         row_ids = self._schema._row_ids
-        for t in self._tables:
-            base = getattr(t, "__table__", t)
-            source = None
-            for pred in list(preds):
-                used = False
-                if isinstance(pred, Eq):
-                    pairs = [(pred.left, pred.right), (pred.right, pred.left)]
-                    for expr, other in pairs:
-                        idx = self._schema._indices.get(expr)
-                        if idx:
-                            tbl, rows = idx.table, idx.data
-                            idx_base = getattr(tbl, "__table__", tbl)
-                            if idx_base is base and not isinstance(other, Expr) and not isinstance(other, type):
-                                key = _value(other, {})
-                                if isinstance(idx, OrderedIndex):
-                                    ids = rows.get(key, [])
-                                    source = [self._schema._all_rows[i] for i in ids]
-                                else:
-                                    bucket = rows.get(key, set())
-                                    source = sorted(bucket, key=row_ids.__getitem__)
-                                preds.remove(pred)
-                                used = True
-                                break
-                    if used:
-                        break
-                if isinstance(pred, (Lt, Le, Gt, Ge)):
-                    comps: list[tuple[object, object, str]] = []
-                    if isinstance(pred, Lt):
-                        comps = [(pred.left, pred.right, "<"), (pred.right, pred.left, ">")]
-                    elif isinstance(pred, Le):
-                        comps = [(pred.left, pred.right, "<="), (pred.right, pred.left, ">=")]
-                    elif isinstance(pred, Gt):
-                        comps = [(pred.left, pred.right, ">"), (pred.right, pred.left, "<")]
-                    elif isinstance(pred, Ge):
-                        comps = [(pred.left, pred.right, ">="), (pred.right, pred.left, "<=")]
-                    for expr, other, op in comps:
-                        idx = self._schema._indices.get(expr)
-                        if isinstance(idx, OrderedIndex) and not isinstance(other, Expr) and not isinstance(other, type):
-                            key = _value(other, {})
-                            keys = idx.keys
-                            if op == "<":
-                                pos = bisect_left(keys, (key, 0))
-                                sel = keys[:pos]
-                            elif op == "<=":
-                                pos = bisect_right(keys, (key, sys.maxsize))
-                                sel = keys[:pos]
-                            elif op == ">":
-                                pos = bisect_right(keys, (key, sys.maxsize))
-                                sel = keys[pos:]
-                            else:  # >=
-                                pos = bisect_left(keys, (key, 0))
-                                sel = keys[pos:]
-                            source = [self._schema._all_rows[rid] for _, rid in sel]
-                            preds.remove(pred)
-                            used = True
-                            break
-                    if used:
-                        break
-                idx = self._schema._indices.get(pred)
-                if idx:
-                    tbl, rows = idx.table, idx.data
-                    idx_base = getattr(tbl, "__table__", tbl)
-                    if idx_base is base:
-                        bucket = rows.get(True, set())
-                        source = sorted(bucket, key=row_ids.__getitem__)
-                        preds.remove(pred)
-                        break
-            if source is None:
-                source = sorted(self._schema._tables.get(base, set()), key=row_ids.__getitem__)
-            sources.append(source)
-        results = []
+        results: list[object | tuple[object, ...]] = []
         for combo in product(*sources):
             env = {t: r for t, r in zip(self._tables, combo)}
-            if all(pred.eval(env) for pred in preds):
+            if all(pred.eval(env) for pred in residual):
                 results.append(combo if len(combo) > 1 else combo[0])
+
         if self._order:
             key_expr, use_id = self._order
             tbl = self._tables[0]
+
             def _sort_key(row: object):
                 val = key_expr.eval({tbl: row})
                 return (val, row_ids[row]) if use_id else val
+
             results.sort(key=_sort_key)
-        for row in results:
-            yield row
+
+        yield from results
 
 
 __all__ = ["RowStream"]
