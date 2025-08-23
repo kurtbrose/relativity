@@ -41,7 +41,7 @@ class Table:
 class Schema:
     def __init__(self) -> None:
         self._tables: dict[type[object], dict[int, object]] = {}
-        self._indices: dict[Expr, tuple[type[object], dict[int, object]]] = {}
+        self._indices: dict[Expr, tuple[type[object], dict[object, dict[int, object]]]] = {}
 
     @property
     def Table(self) -> type[Table]:
@@ -58,15 +58,21 @@ class Schema:
         self._tables[type(row)][id(row)] = row
         for expr, (tbl, idx) in self._indices.items():
             base = getattr(tbl, "__table__", tbl)
-            if base is type(row) and expr.eval({tbl: row}):
-                idx[id(row)] = row
+            if base is type(row):
+                val = expr.eval({tbl: row})
+                idx.setdefault(val, {})[id(row)] = row
 
     def remove(self, row: object) -> None:
         del self._tables[type(row)][id(row)]
-        for tbl, idx in self._indices.values():
+        for expr, (tbl, idx) in self._indices.items():
             base = getattr(tbl, "__table__", tbl)
             if base is type(row):
-                idx.pop(id(row), None)
+                val = expr.eval({tbl: row})
+                bucket = idx.get(val)
+                if bucket is not None:
+                    bucket.pop(id(row), None)
+                    if not bucket:
+                        idx.pop(val, None)
 
     def all(self, *tables: type[object]) -> "RowStream":
         if not tables:
@@ -79,15 +85,27 @@ class Schema:
             raise TypeError("index expressions must reference exactly one table")
         tbl = tables.pop()
         base = getattr(tbl, "__table__", tbl)
-        data = {
-            rid: row
-            for rid, row in self._tables.get(base, {}).items()
-            if expr.eval({tbl: row})
-        }
+        data: dict[object, dict[int, object]] = {}
+        for rid, row in self._tables.get(base, {}).items():
+            val = expr.eval({tbl: row})
+            data.setdefault(val, {})[rid] = row
         self._indices[expr] = (tbl, data)
 
+class Expr:
+    def __and__(self, other: "Expr") -> "Expr":
+        return And(self, other)
 
-class Column:
+    def __or__(self, other: "Expr") -> "Expr":
+        return Or(self, other)
+
+    def __invert__(self) -> "Expr":
+        return Not(self)
+
+    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - abstract
+        raise NotImplementedError
+
+
+class Column(Expr):
     def __init__(self, table: type[object], name: str) -> None:
         self.table = table
         self.name = name
@@ -100,36 +118,24 @@ class Column:
     def __eq__(self, other: object) -> "Eq":
         return Eq(self, other)
 
+    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - trivial
+        row = env[self.table]
+        return getattr(row, self.name)
 
-class Expr:
-    def __and__(self, other: "Expr") -> "Expr":
-        return And(self, other)
-
-    def __or__(self, other: "Expr") -> "Expr":
-        return Or(self, other)
-
-    def __invert__(self) -> "Expr":
-        return Not(self)
-
-    def eval(self, env: dict[type[object], object]) -> bool:  # pragma: no cover - abstract
-        raise NotImplementedError
+    __hash__ = object.__hash__
 
 
 def _value(val: object, env: dict[type[object], object]) -> object:
-    if isinstance(val, Column):
-        row = env[val.table]
-        return getattr(row, val.name)
+    if isinstance(val, Expr):
+        return val.eval(env)
     return val
 
 
 def _tables_in_expr(expr: Expr) -> set[type[object]]:
+    if isinstance(expr, Column):
+        return {expr.table}
     if isinstance(expr, Eq):
-        tables: set[type[object]] = set()
-        if isinstance(expr.left, Column):
-            tables.add(expr.left.table)
-        if isinstance(expr.right, Column):
-            tables.add(expr.right.table)
-        return tables
+        return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)
     if isinstance(expr, And) or isinstance(expr, Or):
         return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)  # type: ignore[arg-type]
     if isinstance(expr, Not):
@@ -188,12 +194,29 @@ class RowStream(Iterable[object]):
             base = getattr(t, "__table__", t)
             source = None
             for pred in list(preds):
+                used = False
+                if isinstance(pred, Eq):
+                    pairs = [(pred.left, pred.right), (pred.right, pred.left)]
+                    for expr, other in pairs:
+                        idx = self._schema._indices.get(expr)
+                        if idx:
+                            tbl, rows = idx
+                            idx_base = getattr(tbl, "__table__", tbl)
+                            if idx_base is base and not isinstance(other, Expr):
+                                bucket = rows.get(other, {})
+                                source = list(bucket.values())
+                                preds.remove(pred)
+                                used = True
+                                break
+                    if used:
+                        break
                 idx = self._schema._indices.get(pred)
                 if idx:
                     tbl, rows = idx
                     idx_base = getattr(tbl, "__table__", tbl)
                     if idx_base is base:
-                        source = list(rows.values())
+                        bucket = rows.get(True, {})
+                        source = list(bucket.values())
                         preds.remove(pred)
                         break
             if source is None:
