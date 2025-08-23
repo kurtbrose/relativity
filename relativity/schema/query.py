@@ -144,6 +144,8 @@ class Planner:
                 continue
             if not isinstance(idx_expr, Tuple):
                 continue
+            if idx.where is not None and idx.where not in preds:
+                continue
             keys: list[object] = []
             used: list[Expr] = []
             for sub in idx_expr.exprs:
@@ -163,6 +165,8 @@ class Planner:
             else:
                 for p in used:
                     preds.remove(p)
+                if idx.where is not None:
+                    preds.remove(idx.where)
                 ordered = isinstance(idx, OrderedIndex)
                 return EqScan(base, idx_expr, tuple(keys), ordered)
 
@@ -171,32 +175,47 @@ class Planner:
                 for expr, other in ((pred.left, pred.right), (pred.right, pred.left)):
                     idx = self.s._indices.get(expr)
                     if idx and self._same_base(idx.table, base):
+                        if idx.where is not None and idx.where not in preds:
+                            continue
                         ordered = isinstance(idx, OrderedIndex)
                         preds.remove(pred)
+                        if idx.where is not None:
+                            preds.remove(idx.where)
                         if not isinstance(other, Expr) and not isinstance(other, type):
                             key = _value(other, {})
                             return EqScan(base, expr, key, ordered)
                         return EqScan(base, expr, other, ordered)
         for pred in list(preds):
-            r = self._range_scan_for_pred(base, pred)
+            r = self._range_scan_for_pred(base, pred, preds)
             if r is not None:
                 preds.remove(pred)
                 return r
         for pred in list(preds):
             idx = self.s._indices.get(pred)
             if idx and self._same_base(idx.table, base):
+                if idx.where is not None and idx.where not in preds:
+                    continue
                 preds.remove(pred)
+                if idx.where is not None:
+                    preds.remove(idx.where)
                 return BoolScan(base, pred)
         return FullScan(base)
-
-    def _range_scan_for_pred(self, base: type, pred: Expr) -> RangeScan | None:
+    def _range_scan_for_pred(self, base: type, pred: Expr, preds: list[Expr]) -> RangeScan | None:
         def ordered_idx(expr: Expr) -> OrderedIndex | None:
             idx = self.s._indices.get(expr)
-            return idx if isinstance(idx, OrderedIndex) and self._same_base(idx.table, base) else None
+            if (
+                isinstance(idx, OrderedIndex)
+                and self._same_base(idx.table, base)
+                and (idx.where is None or idx.where in preds)
+            ):
+                return idx
+            return None
 
         if isinstance(pred, InRange):
             idx = ordered_idx(pred.col)
             if idx:
+                if idx.where is not None:
+                    preds.remove(idx.where)
                 lo = None
                 hi = None
                 if pred.lo is not None:

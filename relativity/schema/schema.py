@@ -88,6 +88,8 @@ class Schema:
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
+                if idx.where is not None and not idx.where.eval({idx.table: row}):
+                    continue
                 val = idx.expr.eval({idx.table: row})
                 if idx.unique and idx.data.get(val):
                     raise KeyError("duplicate key for unique index")
@@ -127,6 +129,8 @@ class Schema:
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
+                if idx.where is not None and not idx.where.eval({idx.table: row}):
+                    continue
                 val = idx.expr.eval({idx.table: row})
                 bucket = idx.data.get(val)
                 if bucket is not None:
@@ -151,7 +155,7 @@ class Schema:
         from .query import RowStream  # import here to avoid circular
         return RowStream(self, tables)
 
-    def index(self, *exprs: Expr, unique: bool = False) -> Index:
+    def index(self, *exprs: Expr, unique: bool = False, where: Expr | None = None) -> Index:
         """Create an index on one or more expressions.
 
         Multiple expressions are combined into :class:`Tuple`, allowing
@@ -161,7 +165,8 @@ class Schema:
         now treats as a single probe.
 
         ``unique`` enforces that the indexed expression yields distinct
-        values for all rows.
+        values for all rows.  ``where`` creates a partial index storing
+        only rows for which the predicate evaluates to true.
         """
         if not exprs:
             raise TypeError("Schema.index() requires at least one expression")
@@ -173,16 +178,20 @@ class Schema:
         base = getattr(tbl, "__table__", tbl)
         data: dict[object, set[Table]] = {}
         for row in self._tables.get(base, set()):
+            if where is not None and not where.eval({tbl: row}):
+                continue
             val = expr.eval({tbl: row})
             bucket = data.setdefault(val, set())
             bucket.add(row)
             if unique and len(bucket) > 1:
                 raise KeyError("non-unique value for unique index")
-        idx = Index(expr, tbl, data, unique)
+        idx = Index(expr, tbl, data, unique, where)
         self._indices[expr] = idx
         return idx
 
-    def ordered_index(self, *exprs: Expr, unique: bool = False) -> OrderedIndex:
+    def ordered_index(
+        self, *exprs: Expr, unique: bool = False, where: Expr | None = None
+    ) -> OrderedIndex:
         if not exprs:
             raise TypeError("Schema.ordered_index() requires at least one expression")
         expr = exprs[0] if len(exprs) == 1 else Tuple(*exprs)
@@ -194,6 +203,8 @@ class Schema:
         data: dict[object, list[int]] = {}
         pairs: list[tuple[object, int]] = []
         for row in self._tables.get(base, set()):
+            if where is not None and not where.eval({tbl: row}):
+                continue
             val = expr.eval({tbl: row})
             row_id = self._row_ids[row]
             bucket = data.setdefault(val, [])
@@ -204,7 +215,7 @@ class Schema:
         for bucket in data.values():
             bucket.sort()
         pairs.sort()
-        idx = OrderedIndex(expr, tbl, data, unique=unique, keys=pairs)
+        idx = OrderedIndex(expr, tbl, data, unique=unique, where=where, keys=pairs)
         self._indices[expr] = idx
         return idx
 
@@ -215,6 +226,8 @@ class Schema:
                 data: dict[object, list[int]] = {}
                 pairs: list[tuple[object, int]] = []
                 for row in self._tables.get(base, set()):
+                    if idx.where is not None and not idx.where.eval({idx.table: row}):
+                        continue
                     val = idx.expr.eval({idx.table: row})
                     row_id = self._row_ids[row]
                     bucket = data.setdefault(val, [])
@@ -230,6 +243,8 @@ class Schema:
             else:
                 data: dict[object, set[Table]] = {}
                 for row in self._tables.get(base, set()):
+                    if idx.where is not None and not idx.where.eval({idx.table: row}):
+                        continue
                     val = idx.expr.eval({idx.table: row})
                     bucket = data.setdefault(val, set())
                     if idx.unique and bucket:
@@ -244,6 +259,8 @@ class Schema:
             data: dict[object, list[int]] = {}
             pairs: list[tuple[object, int]] = []
             for row in self._tables.get(base, set()):
+                if index.where is not None and not index.where.eval({index.table: row}):
+                    continue
                 val = index.expr.eval({index.table: row})
                 row_id = self._row_ids[row]
                 bucket = data.setdefault(val, [])
@@ -259,6 +276,8 @@ class Schema:
         else:
             data: dict[object, set[Table]] = {}
             for row in self._tables.get(base, set()):
+                if index.where is not None and not index.where.eval({index.table: row}):
+                    continue
                 val = index.expr.eval({index.table: row})
                 bucket = data.setdefault(val, set())
                 if index.unique and bucket:
@@ -276,6 +295,8 @@ class Schema:
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
+                if idx.where is not None and not idx.where.eval({idx.table: new_row}):
+                    continue
                 val = idx.expr.eval({idx.table: new_row})
                 if isinstance(idx, OrderedIndex):
                     bucket = idx.data.get(val, [])
