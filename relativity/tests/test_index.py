@@ -1,6 +1,6 @@
 import pytest
 
-from relativity.schema import Schema, Table, Eq, Gt
+from relativity.schema import Schema, Table, Eq, Gt, Tuple
 
 
 class CountingExpr(Eq):
@@ -123,3 +123,40 @@ def test_range_query_planner_uses_index():
     expr2 = CountingGt(Student.score > 1)
     list(schema.all(Student).filter(expr2))
     assert expr2.count == 0
+
+
+def test_composite_index_queries():
+    schema = Schema()
+
+    class Student(schema.Table):
+        first: str
+        last: str
+
+    schema.index(Student.first, Student.last)
+
+    a = Student("a", "x")
+    b = Student("a", "y")
+    schema.add(a)
+    schema.add(b)
+
+    pred = Tuple(Student.first, Student.last) == ("a", "x")
+    assert list(schema.all(Student).filter(pred)) == [a]
+
+
+def test_composite_ordered_index_range_queries():
+    schema = Schema()
+
+    class Student(schema.Table):
+        score: int
+        name: str
+
+    schema.ordered_index(Student.score, Student.name)
+
+    a = Student(10, "a")
+    b = Student(20, "b")
+    c = Student(20, "c")
+    for s in (a, b, c):
+        schema.add(s)
+
+    pred = Tuple(Student.score, Student.name) >= (20, "b")
+    assert set(schema.all(Student).filter(pred)) == {b, c}

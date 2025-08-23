@@ -106,7 +106,10 @@ class Schema:
             raise TypeError("Schema.all() requires at least one table")
         return RowStream(self, tables)
 
-    def index(self, expr: Expr, *, unique: bool = False) -> Index:
+    def index(self, *exprs: Expr, unique: bool = False) -> Index:
+        if not exprs:
+            raise TypeError("Schema.index() requires at least one expression")
+        expr = exprs[0] if len(exprs) == 1 else Tuple(*exprs)
         tables = _tables_in_expr(expr)
         if len(tables) != 1:
             raise TypeError("index expressions must reference exactly one table")
@@ -123,7 +126,10 @@ class Schema:
         self._indices[expr] = idx
         return idx
 
-    def ordered_index(self, expr: Expr, *, unique: bool = False) -> OrderedIndex:
+    def ordered_index(self, *exprs: Expr, unique: bool = False) -> OrderedIndex:
+        if not exprs:
+            raise TypeError("Schema.ordered_index() requires at least one expression")
+        expr = exprs[0] if len(exprs) == 1 else Tuple(*exprs)
         tables = _tables_in_expr(expr)
         if len(tables) != 1:
             raise TypeError("index expressions must reference exactly one table")
@@ -198,6 +204,32 @@ class Column(Expr):
         return getattr(row, self.name)
 
 
+@dataclass(frozen=True, init=False)
+class Tuple(Expr):
+    exprs: tuple[Expr, ...]
+
+    def __init__(self, *exprs: Expr):
+        object.__setattr__(self, "exprs", tuple(exprs))
+
+    def __eq__(self, other: object) -> "Eq":  # type: ignore[override]
+        return Eq(self, other)
+
+    def __lt__(self, other: object) -> "Lt":  # type: ignore[override]
+        return Lt(self, other)
+
+    def __le__(self, other: object) -> "Le":  # type: ignore[override]
+        return Le(self, other)
+
+    def __gt__(self, other: object) -> "Gt":  # type: ignore[override]
+        return Gt(self, other)
+
+    def __ge__(self, other: object) -> "Ge":  # type: ignore[override]
+        return Ge(self, other)
+
+    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - trivial
+        return tuple(expr.eval(env) for expr in self.exprs)
+
+
 def _value(val: object, env: dict[type[object], object]) -> object:
     if isinstance(val, Expr):
         return val.eval(env)
@@ -207,6 +239,11 @@ def _value(val: object, env: dict[type[object], object]) -> object:
 def _tables_in_expr(expr: Expr) -> set[type[object]]:
     if isinstance(expr, Column):
         return {expr.table}
+    if isinstance(expr, Tuple):
+        tables: set[type[object]] = set()
+        for sub in expr.exprs:
+            tables |= _tables_in_expr(sub)
+        return tables
     if isinstance(expr, (Eq, Lt, Le, Gt, Ge)):
         return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)
     if isinstance(expr, And) or isinstance(expr, Or):
