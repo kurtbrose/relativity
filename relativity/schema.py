@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from itertools import product
+from itertools import product, count
 from bisect import bisect_left, bisect_right, insort
-from typing import ClassVar, Iterable, Iterator, Sequence
+from typing import ClassVar, Iterable, Iterator, Sequence, Generic, TypeVar, get_args, get_origin
 
 try:  # pragma: no cover - for Python <3.11
     from typing import dataclass_transform
@@ -17,6 +17,14 @@ except ImportError:  # pragma: no cover - fallback for old Python
                 return cls
 
             return decorator
+
+
+T = TypeVar("T")
+
+
+@dataclass(slots=True, frozen=True)
+class Ref(Generic[T]):
+    id: int
 
 
 @dataclass_transform()
@@ -34,7 +42,7 @@ class Table:
             raise TypeError("schema.Table subclass without schema")
         dataclass(eq=False, frozen=True)(cls)
         cls.__schema__ = schema
-        schema._tables.setdefault(cls, {})
+        schema._tables.setdefault(cls, set())
         for name in cls.__dataclass_fields__:
             setattr(cls, name, Column(cls, name))
         Table._schema_ctx = None
@@ -43,8 +51,8 @@ class Table:
 @dataclass
 class Index:
     expr: "Expr"
-    table: type[object]
-    data: dict[object, set[object]]
+    table: type[Table]
+    data: dict[object, set[Table]]
     unique: bool = False
 
 
@@ -53,10 +61,17 @@ class OrderedIndex(Index):
     keys: list[object] = field(default_factory=list)
 
 
+def _dict_field() -> dataclasses.Field:
+    return field(default_factory=dict)
+
+
+@dataclass(repr=False)
 class Schema:
-    def __init__(self) -> None:
-        self._tables: dict[type[object], dict[int, object]] = {}
-        self._indices: dict[Expr, Index] = {}
+    _tables: dict[type[Table], set[Table]] = _dict_field()
+    _indices: dict[Expr, Index] = _dict_field()
+    _all_rows: dict[int, Table] = _dict_field()
+    _row_ids: dict[Table, int] = _dict_field()
+    _next_id: count = field(default_factory=lambda: count(1))
 
     @property
     def Table(self) -> type[Table]:
@@ -69,7 +84,19 @@ class Schema:
 
         return _Shim()  # type: ignore[misc]
 
-    def add(self, row: object) -> None:
+    def ref(self, row: T) -> Ref[T]:
+        return Ref(self._row_ids[row])
+
+    def get(self, ref: Ref[T]) -> T:
+        return self._all_rows[ref.id]
+
+    def add(self, row: Table, row_id: int | None = None) -> None:
+        for name, typ in getattr(type(row), "__annotations__", {}).items():
+            if get_origin(typ) is Ref:
+                ref = getattr(row, name)
+                target = self._all_rows.get(ref.id)
+                if target is None or not isinstance(target, get_args(typ)[0]):
+                    raise KeyError("invalid reference")
         vals: list[tuple[Index, object]] = []
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
@@ -78,15 +105,35 @@ class Schema:
                 if idx.unique and idx.data.get(val):
                     raise KeyError("duplicate key for unique index")
                 vals.append((idx, val))
-        self._tables[type(row)][id(row)] = row
+        if row_id is None:
+            row_id = next(self._next_id)
+        self._tables.setdefault(type(row), set()).add(row)
+        self._all_rows[row_id] = row
+        self._row_ids[row] = row_id
         for idx, val in vals:
             if isinstance(idx, OrderedIndex) and val not in idx.data:
                 insort(idx.keys, val)
             bucket = idx.data.setdefault(val, set())
             bucket.add(row)
 
-    def remove(self, row: object) -> None:
-        del self._tables[type(row)][id(row)]
+    def remove(self, row: Table, *, check_refs: bool = True) -> None:
+        row_id = self._row_ids[row]
+        if check_refs:
+            for tbl, rows in self._tables.items():
+                for name, typ in getattr(tbl, "__annotations__", {}).items():
+                    if get_origin(typ) is Ref and get_args(typ)[0] is type(row):
+                        idx = self._indices.get(getattr(tbl, name))
+                        if idx:
+                            if idx.data.get(row_id):
+                                raise KeyError("row is referenced")
+                        else:
+                            for other in rows:
+                                ref = getattr(other, name)
+                                if ref.id == row_id:
+                                    raise KeyError("row is referenced")
+        self._tables[type(row)].remove(row)
+        del self._all_rows[row_id]
+        del self._row_ids[row]
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
@@ -101,7 +148,7 @@ class Schema:
                             if pos < len(idx.keys) and idx.keys[pos] == val:
                                 idx.keys.pop(pos)
 
-    def all(self, *tables: type[object]) -> "RowStream":
+    def all(self, *tables: type[Table]) -> "RowStream":
         if not tables:
             raise TypeError("Schema.all() requires at least one table")
         return RowStream(self, tables)
@@ -115,8 +162,8 @@ class Schema:
             raise TypeError("index expressions must reference exactly one table")
         tbl = tables.pop()
         base = getattr(tbl, "__table__", tbl)
-        data: dict[object, set[object]] = {}
-        for row in self._tables.get(base, {}).values():
+        data: dict[object, set[Table]] = {}
+        for row in self._tables.get(base, set()):
             val = expr.eval({tbl: row})
             bucket = data.setdefault(val, set())
             bucket.add(row)
@@ -135,8 +182,8 @@ class Schema:
             raise TypeError("index expressions must reference exactly one table")
         tbl = tables.pop()
         base = getattr(tbl, "__table__", tbl)
-        data: dict[object, set[object]] = {}
-        for row in self._tables.get(base, {}).values():
+        data: dict[object, set[Table]] = {}
+        for row in self._tables.get(base, set()):
             val = expr.eval({tbl: row})
             bucket = data.setdefault(val, set())
             bucket.add(row)
@@ -147,7 +194,8 @@ class Schema:
         self._indices[expr] = idx
         return idx
 
-    def replace(self, row: object, **changes: object) -> object:
+    def replace(self, row: Table, **changes: object) -> Table:
+        row_id = self._row_ids[row]
         new_row = dataclasses.replace(row, **changes)
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
@@ -156,8 +204,8 @@ class Schema:
                 bucket = idx.data.get(val, set())
                 if idx.unique and bucket and bucket != {row}:
                     raise KeyError("duplicate key for unique index")
-        self.remove(row)
-        self.add(new_row)
+        self.remove(row, check_refs=False)
+        self.add(new_row, row_id)
         return new_row
 
 class Expr:
@@ -170,16 +218,16 @@ class Expr:
     def __invert__(self) -> "Expr":
         return Not(self)
 
-    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - abstract
+    def eval(self, env: dict[type[Table], Table]) -> object:  # pragma: no cover - abstract
         raise NotImplementedError
 
 
 @dataclass(frozen=True)
 class Column(Expr):
-    table: type[object]
+    table: type[Table]
     name: str
 
-    def __get__(self, inst: object | None, owner: type[object]) -> object:
+    def __get__(self, inst: Table | None, owner: type[Table]) -> object:
         if inst is None:
             return self
         return inst.__dict__[self.name]
@@ -199,9 +247,12 @@ class Column(Expr):
     def __ge__(self, other: object) -> "Ge":  # type: ignore[override]
         return Ge(self, other)
 
-    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - trivial
+    def eval(self, env: dict[type[Table], Table]) -> object:  # pragma: no cover - trivial
         row = env[self.table]
-        return getattr(row, self.name)
+        val = getattr(row, self.name)
+        if isinstance(val, Ref):
+            return val.id
+        return val
 
 
 @dataclass(frozen=True, init=False)
@@ -226,21 +277,29 @@ class Tuple(Expr):
     def __ge__(self, other: object) -> "Ge":  # type: ignore[override]
         return Ge(self, other)
 
-    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - trivial
+    def eval(self, env: dict[type[Table], Table]) -> object:  # pragma: no cover - trivial
         return tuple(expr.eval(env) for expr in self.exprs)
 
 
-def _value(val: object, env: dict[type[object], object]) -> object:
+def _value(val: object, env: dict[type[Table], Table]) -> object:
     if isinstance(val, Expr):
         return val.eval(env)
+    if isinstance(val, Ref):
+        return val.id
+    if isinstance(val, type) and val in env:
+        row = env[val]
+        schema = getattr(val, "__schema__", getattr(getattr(val, "__table__", None), "__schema__", None))
+        if schema is not None:
+            return schema._row_ids[row]
+        return row
     return val
 
 
-def _tables_in_expr(expr: Expr) -> set[type[object]]:
+def _tables_in_expr(expr: Expr) -> set[type[Table]]:
     if isinstance(expr, Column):
         return {expr.table}
     if isinstance(expr, Tuple):
-        tables: set[type[object]] = set()
+        tables: set[type[Table]] = set()
         for sub in expr.exprs:
             tables |= _tables_in_expr(sub)
         return tables
@@ -258,7 +317,7 @@ class Eq(Expr):
     left: object
     right: object
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return _value(self.left, env) == _value(self.right, env)
 
 
@@ -267,7 +326,7 @@ class Lt(Expr):
     left: object
     right: object
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return _value(self.left, env) < _value(self.right, env)
 
 
@@ -276,7 +335,7 @@ class Le(Expr):
     left: object
     right: object
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return _value(self.left, env) <= _value(self.right, env)
 
 
@@ -285,7 +344,7 @@ class Gt(Expr):
     left: object
     right: object
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return _value(self.left, env) > _value(self.right, env)
 
 
@@ -294,7 +353,7 @@ class Ge(Expr):
     left: object
     right: object
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return _value(self.left, env) >= _value(self.right, env)
 
 
@@ -303,7 +362,7 @@ class And(Expr):
     left: Expr
     right: Expr
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return self.left.eval(env) and self.right.eval(env)
 
 
@@ -312,7 +371,7 @@ class Or(Expr):
     left: Expr
     right: Expr
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return self.left.eval(env) or self.right.eval(env)
 
 
@@ -320,12 +379,12 @@ class Or(Expr):
 class Not(Expr):
     expr: Expr
 
-    def eval(self, env: dict[type[object], object]) -> bool:
+    def eval(self, env: dict[type[Table], Table]) -> bool:
         return not self.expr.eval(env)
 
 
 class RowStream(Iterable[object]):
-    def __init__(self, schema: "Schema", tables: Sequence[type[object]], preds: Sequence[Expr] | None = None) -> None:
+    def __init__(self, schema: "Schema", tables: Sequence[type[Table]], preds: Sequence[Expr] | None = None) -> None:
         self._schema = schema
         self._tables = list(tables)
         self._preds = list(preds or [])
@@ -336,6 +395,7 @@ class RowStream(Iterable[object]):
     def __iter__(self) -> Iterator[object]:
         preds = list(self._preds)
         sources = []
+        row_ids = self._schema._row_ids
         for t in self._tables:
             base = getattr(t, "__table__", t)
             source = None
@@ -348,9 +408,10 @@ class RowStream(Iterable[object]):
                         if idx:
                             tbl, rows = idx.table, idx.data
                             idx_base = getattr(tbl, "__table__", tbl)
-                            if idx_base is base and not isinstance(other, Expr):
-                                bucket = rows.get(other, set())
-                                source = list(bucket)
+                            if idx_base is base and not isinstance(other, Expr) and not isinstance(other, type):
+                                key = _value(other, {})
+                                bucket = rows.get(key, set())
+                                source = sorted(bucket, key=row_ids.__getitem__)
                                 preds.remove(pred)
                                 used = True
                                 break
@@ -368,24 +429,25 @@ class RowStream(Iterable[object]):
                         comps = [(pred.left, pred.right, ">="), (pred.right, pred.left, "<=")]
                     for expr, other, op in comps:
                         idx = self._schema._indices.get(expr)
-                        if isinstance(idx, OrderedIndex) and not isinstance(other, Expr):
+                        if isinstance(idx, OrderedIndex) and not isinstance(other, Expr) and not isinstance(other, type):
+                            key = _value(other, {})
                             keys, rows = idx.keys, idx.data
                             if op == "<":
-                                pos = bisect_left(keys, other)
+                                pos = bisect_left(keys, key)
                                 sel = keys[:pos]
                             elif op == "<=":
-                                pos = bisect_right(keys, other)
+                                pos = bisect_right(keys, key)
                                 sel = keys[:pos]
                             elif op == ">":
-                                pos = bisect_right(keys, other)
+                                pos = bisect_right(keys, key)
                                 sel = keys[pos:]
                             else:  # >=
-                                pos = bisect_left(keys, other)
+                                pos = bisect_left(keys, key)
                                 sel = keys[pos:]
                             bucket: list[object] = []
                             for k in sel:
                                 bucket.extend(rows.get(k, set()))
-                            source = bucket
+                            source = sorted(bucket, key=row_ids.__getitem__)
                             preds.remove(pred)
                             used = True
                             break
@@ -397,11 +459,11 @@ class RowStream(Iterable[object]):
                     idx_base = getattr(tbl, "__table__", tbl)
                     if idx_base is base:
                         bucket = rows.get(True, set())
-                        source = list(bucket)
+                        source = sorted(bucket, key=row_ids.__getitem__)
                         preds.remove(pred)
                         break
             if source is None:
-                source = list(self._schema._tables.get(base, {}).values())
+                source = sorted(self._schema._tables.get(base, set()), key=row_ids.__getitem__)
             sources.append(source)
         for combo in product(*sources):
             env = {t: r for t, r in zip(self._tables, combo)}
@@ -409,7 +471,7 @@ class RowStream(Iterable[object]):
                 yield combo if len(combo) > 1 else combo[0]
 
 
-def alias(table: type[object]) -> type[object]:
+def alias(table: type[Table]) -> type[Table]:
     class _Alias:
         __table__ = table
 
