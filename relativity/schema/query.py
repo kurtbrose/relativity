@@ -39,7 +39,6 @@ class EqScan(Scan):
     ordered: bool
 
     def run(self, s: "Schema", env: dict[type["Table"], object] | None = None) -> list[object]:
-        row_ids = s._row_ids
         idx = s._indices[self.index_expr]
         key_env = env or {}
         key = (
@@ -50,8 +49,8 @@ class EqScan(Scan):
         if self.ordered:
             ids = idx.data.get(key, [])
             return [s._all_rows[i] for i in ids]
-        bucket = idx.data.get(key, set())
-        return sorted(bucket, key=row_ids.__getitem__)
+        ids = sorted(idx.data.get(key, set()))
+        return [s._all_rows[i] for i in ids]
 
 
 @dataclass(frozen=True)
@@ -74,10 +73,9 @@ class BoolScan(Scan):
     index_expr: Expr
 
     def run(self, s: "Schema", env: dict[type["Table"], object] | None = None) -> list[object]:
-        row_ids = s._row_ids
         idx = s._indices[self.index_expr]
-        bucket = idx.data.get(True, set())
-        return sorted(bucket, key=row_ids.__getitem__)
+        ids = sorted(idx.data.get(True, set()))
+        return [s._all_rows[i] for i in ids]
 
 
 def _norm_one(pred: Expr) -> Expr:
