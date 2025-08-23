@@ -395,6 +395,7 @@ class RowStream(Iterable[object]):
     def __iter__(self) -> Iterator[object]:
         preds = list(self._preds)
         sources = []
+        row_ids = self._schema._row_ids
         for t in self._tables:
             base = getattr(t, "__table__", t)
             source = None
@@ -410,7 +411,7 @@ class RowStream(Iterable[object]):
                             if idx_base is base and not isinstance(other, Expr) and not isinstance(other, type):
                                 key = _value(other, {})
                                 bucket = rows.get(key, set())
-                                source = list(bucket)
+                                source = sorted(bucket, key=row_ids.__getitem__)
                                 preds.remove(pred)
                                 used = True
                                 break
@@ -446,7 +447,7 @@ class RowStream(Iterable[object]):
                             bucket: list[object] = []
                             for k in sel:
                                 bucket.extend(rows.get(k, set()))
-                            source = bucket
+                            source = sorted(bucket, key=row_ids.__getitem__)
                             preds.remove(pred)
                             used = True
                             break
@@ -458,11 +459,11 @@ class RowStream(Iterable[object]):
                     idx_base = getattr(tbl, "__table__", tbl)
                     if idx_base is base:
                         bucket = rows.get(True, set())
-                        source = list(bucket)
+                        source = sorted(bucket, key=row_ids.__getitem__)
                         preds.remove(pred)
                         break
             if source is None:
-                source = list(self._schema._tables.get(base, set()))
+                source = sorted(self._schema._tables.get(base, set()), key=row_ids.__getitem__)
             sources.append(source)
         for combo in product(*sources):
             env = {t: r for t, r in zip(self._tables, combo)}
