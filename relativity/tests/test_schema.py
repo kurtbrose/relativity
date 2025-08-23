@@ -3,7 +3,7 @@ import importlib
 
 import pytest
 
-from relativity.schema import Schema, Table
+from relativity.schema import Schema, Table, alias
 
 
 def test_schema_storage_and_iteration():
@@ -67,3 +67,24 @@ def test_dataclass_transform_fallback(monkeypatch):
 
     monkeypatch.undo()
     importlib.reload(schema_module)
+
+
+def test_all_filter_and_alias():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+        parent: str
+
+    a = Student("a", "p1")
+    b = Student("b", "p2")
+    c = Student("c", "p1")
+    for s in (a, b, c):
+        schema.add(s)
+
+    sib = alias(Student)
+    pairs = list(schema.all(Student, sib).filter(Student.parent == sib.parent))
+    assert (a, c) in pairs and (c, a) in pairs
+    assert all(len(pair) == 2 for pair in pairs)
+
+    assert list(schema.all(Student).filter(Student.parent == "p1")) == [a, c]
