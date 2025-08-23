@@ -104,6 +104,26 @@ def test_ordered_index_updates_and_queries():
     assert list(schema.all(Student).filter(pred_gt)) == [c]
 
 
+def test_ordered_index_equality_queries():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+        score: int
+
+    schema.ordered_index(Student.score)
+
+    a = Student("a", 10)
+    b = Student("b", 20)
+    c = Student("c", 10)
+    for s in (a, b, c):
+        schema.add(s)
+
+    expr = CountingExpr(Student.score == 10)
+    assert set(schema.all(Student).filter(expr)) == {a, c}
+    assert expr.count == 0
+
+
 def test_range_query_planner_uses_index():
     schema = Schema()
 

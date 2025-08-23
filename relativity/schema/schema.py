@@ -91,8 +91,13 @@ class Schema:
                 if idx.where is not None and not idx.where.eval({idx.table: row}):
                     continue
                 val = idx.expr.eval({idx.table: row})
-                if idx.unique and idx.data.get(val):
-                    raise KeyError("duplicate key for unique index")
+                if idx.unique:
+                    if isinstance(idx, OrderedIndex):
+                        pos = bisect_left(idx.keys, (val, -1))
+                        if pos < len(idx.keys) and idx.keys[pos][0] == val:
+                            raise KeyError("duplicate key for unique index")
+                    elif idx.data.get(val):
+                        raise KeyError("duplicate key for unique index")
                 vals.append((idx, val))
         if row_id is None:
             row_id = next(self._next_id)
@@ -102,8 +107,6 @@ class Schema:
         for idx, val in vals:
             if isinstance(idx, OrderedIndex):
                 insort(idx.keys, (val, row_id))
-                bucket = idx.data.setdefault(val, [])
-                insort(bucket, row_id)
             else:
                 bucket = idx.data.setdefault(val, set())
                 bucket.add(row_id)
@@ -116,7 +119,11 @@ class Schema:
                     if get_origin(typ) is Ref and get_args(typ)[0] is type(row):
                         idx = self._indices.get(getattr(tbl, name))
                         if idx:
-                            if idx.data.get(row_id):
+                            if isinstance(idx, OrderedIndex):
+                                pos = bisect_left(idx.keys, (row_id, -1))
+                                if pos < len(idx.keys) and idx.keys[pos][0] == row_id:
+                                    raise KeyError("row is referenced")
+                            elif idx.data.get(row_id):
                                 raise KeyError("row is referenced")
                         else:
                             for other in rows:
@@ -132,19 +139,13 @@ class Schema:
                 if idx.where is not None and not idx.where.eval({idx.table: row}):
                     continue
                 val = idx.expr.eval({idx.table: row})
-                bucket = idx.data.get(val)
-                if bucket is not None:
-                    if isinstance(idx, OrderedIndex):
-                        row_id2 = row_id
-                        pos = bisect_left(bucket, row_id2)
-                        if pos < len(bucket) and bucket[pos] == row_id2:
-                            bucket.pop(pos)
-                        if not bucket:
-                            idx.data.pop(val, None)
-                        pos = bisect_left(idx.keys, (val, row_id2))
-                        if pos < len(idx.keys) and idx.keys[pos] == (val, row_id2):
-                            idx.keys.pop(pos)
-                    else:
+                if isinstance(idx, OrderedIndex):
+                    pos = bisect_left(idx.keys, (val, row_id))
+                    if pos < len(idx.keys) and idx.keys[pos] == (val, row_id):
+                        idx.keys.pop(pos)
+                else:
+                    bucket = idx.data.get(val)
+                    if bucket is not None:
                         bucket.discard(row_id)
                         if not bucket:
                             idx.data.pop(val, None)
@@ -201,22 +202,19 @@ class Schema:
             raise TypeError("index expressions must reference exactly one table")
         tbl = tables.pop()
         base = getattr(tbl, "__table__", tbl)
-        data: dict[object, list[int]] = {}
         pairs: list[tuple[object, int]] = []
         for row in self._tables.get(base, set()):
             if where is not None and not where.eval({tbl: row}):
                 continue
             val = expr.eval({tbl: row})
             row_id = self._row_ids[row]
-            bucket = data.setdefault(val, [])
-            bucket.append(row_id)
-            if unique and len(bucket) > 1:
-                raise KeyError("non-unique value for unique index")
             pairs.append((val, row_id))
-        for bucket in data.values():
-            bucket.sort()
         pairs.sort()
-        idx = OrderedIndex(expr, tbl, data, unique=unique, where=where, keys=pairs)
+        if unique:
+            for i in range(1, len(pairs)):
+                if pairs[i - 1][0] == pairs[i][0]:
+                    raise KeyError("non-unique value for unique index")
+        idx = OrderedIndex(expr, tbl, unique=unique, where=where, keys=pairs)
         self._indices[expr] = idx
         return idx
 
@@ -224,22 +222,19 @@ class Schema:
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
             if isinstance(idx, OrderedIndex):
-                data: dict[object, list[int]] = {}
                 pairs: list[tuple[object, int]] = []
                 for row in self._tables.get(base, set()):
                     if idx.where is not None and not idx.where.eval({idx.table: row}):
                         continue
                     val = idx.expr.eval({idx.table: row})
                     row_id = self._row_ids[row]
-                    bucket = data.setdefault(val, [])
-                    bucket.append(row_id)
-                    if idx.unique and len(bucket) > 1:
-                        raise AssertionError("duplicate key for unique index")
                     pairs.append((val, row_id))
-                for bucket in data.values():
-                    bucket.sort()
                 pairs.sort()
-                if idx.data != data or idx.keys != pairs:
+                if idx.unique:
+                    for i in range(1, len(pairs)):
+                        if pairs[i - 1][0] == pairs[i][0]:
+                            raise AssertionError("duplicate key for unique index")
+                if idx.keys != pairs:
                     raise AssertionError("index out of sync")
             else:
                 data: dict[object, set[int]] = {}
@@ -258,22 +253,18 @@ class Schema:
     def rebuild(self, index: Index) -> None:
         base = getattr(index.table, "__table__", index.table)
         if isinstance(index, OrderedIndex):
-            data: dict[object, list[int]] = {}
             pairs: list[tuple[object, int]] = []
             for row in self._tables.get(base, set()):
                 if index.where is not None and not index.where.eval({index.table: row}):
                     continue
                 val = index.expr.eval({index.table: row})
                 row_id = self._row_ids[row]
-                bucket = data.setdefault(val, [])
-                bucket.append(row_id)
-                if index.unique and len(bucket) > 1:
-                    raise KeyError("non-unique value for unique index")
                 pairs.append((val, row_id))
-            for bucket in data.values():
-                bucket.sort()
             pairs.sort()
-            index.data = data
+            if index.unique:
+                for i in range(1, len(pairs)):
+                    if pairs[i - 1][0] == pairs[i][0]:
+                        raise KeyError("non-unique value for unique index")
             index.keys = pairs
         else:
             data: dict[object, set[int]] = {}
@@ -307,9 +298,14 @@ class Schema:
                     continue
                 if new_match:
                     if isinstance(idx, OrderedIndex):
-                        bucket = idx.data.get(new_val, [])
-                        if idx.unique and bucket and not (len(bucket) == 1 and bucket[0] == row_id):
-                            raise KeyError("duplicate key for unique index")
+                        if idx.unique:
+                            pos = bisect_left(idx.keys, (new_val, -1))
+                            if (
+                                pos < len(idx.keys)
+                                and idx.keys[pos][0] == new_val
+                                and idx.keys[pos][1] != row_id
+                            ):
+                                raise KeyError("duplicate key for unique index")
                     else:
                         bucket = idx.data.get(new_val, set())
                         if idx.unique and bucket and not (len(bucket) == 1 and row_id in bucket):
@@ -325,17 +321,10 @@ class Schema:
         for idx, old_val, new_val in updates:
             if isinstance(idx, OrderedIndex):
                 if old_val is not None:
-                    bucket = idx.data.get(old_val, [])
-                    pos = bisect_left(bucket, row_id)
-                    if pos < len(bucket) and bucket[pos] == row_id:
-                        bucket.pop(pos)
-                        if not bucket:
-                            idx.data.pop(old_val, None)
                     pos = bisect_left(idx.keys, (old_val, row_id))
                     if pos < len(idx.keys) and idx.keys[pos] == (old_val, row_id):
                         idx.keys.pop(pos)
                 if new_val is not None:
-                    insort(idx.data.setdefault(new_val, []), row_id)
                     insort(idx.keys, (new_val, row_id))
             else:
                 if old_val is not None:

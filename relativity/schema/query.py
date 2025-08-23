@@ -47,8 +47,10 @@ class EqScan(Scan):
             else _value(self.key, key_env)
         )
         if self.ordered:
-            ids = idx.data.get(key, [])
-            return [s._all_rows[i] for i in ids]
+            keys = idx.keys
+            lo = bisect_left(keys, (key, -1))
+            hi = bisect_right(keys, (key, sys.maxsize))
+            return [s._all_rows[rid] for _, rid in keys[lo:hi]]
         ids = sorted(idx.data.get(key, set()))
         return [s._all_rows[i] for i in ids]
 
