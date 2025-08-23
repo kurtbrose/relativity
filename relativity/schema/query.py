@@ -6,9 +6,8 @@ from itertools import product
 from typing import Any, Iterable, Iterator, Sequence
 import sys
 
-from .expr import Expr, Eq, Lt, Le, Gt, Ge, _value
+from .expr import Expr, Eq, InRange, _value
 from .index import OrderedIndex
-
 if True:  # pragma: no cover - for type checking without runtime import
     from .schema import Schema, Table  # type: ignore
 
@@ -76,6 +75,48 @@ class BoolScan(Scan):
         return sorted(bucket, key=row_ids.__getitem__)
 
 
+def _norm_one(pred: Expr) -> Expr:
+    if isinstance(pred, Eq):
+        left, right = pred.left, pred.right
+        if isinstance(right, Expr) and not isinstance(left, Expr):
+            return Eq(right, left)
+        if isinstance(left, Expr) and not isinstance(right, Expr):
+            return pred
+        if repr(left) > repr(right):
+            return Eq(right, left)
+        return pred
+    return pred
+
+
+def _normalize(preds: Sequence[Expr]) -> list[Expr]:
+    ranges: dict[Expr, InRange] = {}
+    others: list[Expr] = []
+    for p in preds:
+        np = _norm_one(p)
+        if isinstance(np, InRange):
+            col = np.col
+            existing = ranges.get(col)
+            if existing:
+                lo, lo_inc = existing.lo, existing.lo_inc
+                hi, hi_inc = existing.hi, existing.hi_inc
+                if np.lo is not None:
+                    if lo is None or np.lo > lo or (np.lo == lo and not np.lo_inc):
+                        lo, lo_inc = np.lo, np.lo_inc
+                    elif np.lo == lo:
+                        lo_inc = lo_inc and np.lo_inc
+                if np.hi is not None:
+                    if hi is None or np.hi < hi or (np.hi == hi and not np.hi_inc):
+                        hi, hi_inc = np.hi, np.hi_inc
+                    elif np.hi == hi:
+                        hi_inc = hi_inc and np.hi_inc
+                ranges[col] = InRange(col, lo, lo_inc, hi, hi_inc)
+            else:
+                ranges[col] = np
+        else:
+            others.append(np)
+    return list(ranges.values()) + others
+
+
 class Planner:
     def __init__(self, schema: "Schema") -> None:
         self.s = schema
@@ -114,49 +155,22 @@ class Planner:
         return FullScan(base)
 
     def _range_scan_for_pred(self, base: type, pred: Expr) -> RangeScan | None:
-        def make(index: OrderedIndex, lo, hi) -> RangeScan:
-            return RangeScan(base, index, lo, hi)
-
         def ordered_idx(expr: Expr) -> OrderedIndex | None:
             idx = self.s._indices.get(expr)
             return idx if isinstance(idx, OrderedIndex) and self._same_base(idx.table, base) else None
 
-        if isinstance(pred, Lt):
-            idx = ordered_idx(pred.left)
-            if idx and not isinstance(pred.right, (Expr, type)):
-                key = _value(pred.right, {})
-                return make(idx, None, (key, sys.maxsize - 1))
-            idx = ordered_idx(pred.right)
-            if idx and not isinstance(pred.left, (Expr, type)):
-                key = _value(pred.left, {})
-                return make(idx, (key, 0), None)
-        if isinstance(pred, Le):
-            idx = ordered_idx(pred.left)
-            if idx and not isinstance(pred.right, (Expr, type)):
-                key = _value(pred.right, {})
-                return make(idx, None, (key, sys.maxsize))
-            idx = ordered_idx(pred.right)
-            if idx and not isinstance(pred.left, (Expr, type)):
-                key = _value(pred.left, {})
-                return make(idx, (key, 0), None)
-        if isinstance(pred, Gt):
-            idx = ordered_idx(pred.left)
-            if idx and not isinstance(pred.right, (Expr, type)):
-                key = _value(pred.right, {})
-                return make(idx, (key, sys.maxsize), None)
-            idx = ordered_idx(pred.right)
-            if idx and not isinstance(pred.left, (Expr, type)):
-                key = _value(pred.left, {})
-                return make(idx, None, (key, 0))
-        if isinstance(pred, Ge):
-            idx = ordered_idx(pred.left)
-            if idx and not isinstance(pred.right, (Expr, type)):
-                key = _value(pred.right, {})
-                return make(idx, (key, 0), None)
-            idx = ordered_idx(pred.right)
-            if idx and not isinstance(pred.left, (Expr, type)):
-                key = _value(pred.left, {})
-                return make(idx, None, (key, sys.maxsize))
+        if isinstance(pred, InRange):
+            idx = ordered_idx(pred.col)
+            if idx:
+                lo = None
+                hi = None
+                if pred.lo is not None:
+                    key = _value(pred.lo, {})
+                    lo = (key, 0 if pred.lo_inc else sys.maxsize)
+                if pred.hi is not None:
+                    key = _value(pred.hi, {})
+                    hi = (key, sys.maxsize if pred.hi_inc else -1)
+                return RangeScan(base, idx, lo, hi)
         return None
 
     @staticmethod
@@ -188,7 +202,7 @@ class RowStream(Iterable[object]):
 
     def __iter__(self) -> Iterator[object]:
         planner = Planner(self._schema)
-        plans, residual = planner.plan(self._tables, self._preds)
+        plans, residual = planner.plan(self._tables, _normalize(self._preds))
 
         sources: list[list[object]] = [p.scan.run(self._schema) for p in plans]
 

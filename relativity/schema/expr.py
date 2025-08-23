@@ -31,17 +31,17 @@ class Column(Expr):
     def __eq__(self, other: object) -> "Eq":  # type: ignore[override]
         return Eq(self, other)
 
-    def __lt__(self, other: object) -> "Lt":  # type: ignore[override]
-        return Lt(self, other)
+    def __lt__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, None, False, other, False)
 
-    def __le__(self, other: object) -> "Le":  # type: ignore[override]
-        return Le(self, other)
+    def __le__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, None, False, other, True)
 
-    def __gt__(self, other: object) -> "Gt":  # type: ignore[override]
-        return Gt(self, other)
+    def __gt__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, other, False, None, False)
 
-    def __ge__(self, other: object) -> "Ge":  # type: ignore[override]
-        return Ge(self, other)
+    def __ge__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, other, True, None, False)
 
     def eval(self, env: Dict[type[object], object]) -> Any:  # pragma: no cover - trivial
         row = env[self.table]
@@ -61,17 +61,17 @@ class Tuple(Expr):
     def __eq__(self, other: object) -> "Eq":  # type: ignore[override]
         return Eq(self, other)
 
-    def __lt__(self, other: object) -> "Lt":  # type: ignore[override]
-        return Lt(self, other)
+    def __lt__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, None, False, other, False)
 
-    def __le__(self, other: object) -> "Le":  # type: ignore[override]
-        return Le(self, other)
+    def __le__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, None, False, other, True)
 
-    def __gt__(self, other: object) -> "Gt":  # type: ignore[override]
-        return Gt(self, other)
+    def __gt__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, other, False, None, False)
 
-    def __ge__(self, other: object) -> "Ge":  # type: ignore[override]
-        return Ge(self, other)
+    def __ge__(self, other: object) -> "InRange":  # type: ignore[override]
+        return InRange(self, other, True, None, False)
 
     def eval(self, env: Dict[type[object], object]) -> Any:  # pragma: no cover - trivial
         return tuple(expr.eval(env) for expr in self.exprs)
@@ -99,8 +99,15 @@ def _tables_in_expr(expr: Expr) -> Set[type["Table"]]:
         for sub in expr.exprs:
             tables |= _tables_in_expr(sub)
         return tables
-    if isinstance(expr, (Eq, Lt, Le, Gt, Ge)):
+    if isinstance(expr, Eq):
         return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)
+    if isinstance(expr, InRange):
+        tables = _tables_in_expr(expr.col)
+        if isinstance(expr.lo, Expr):
+            tables |= _tables_in_expr(expr.lo)
+        if isinstance(expr.hi, Expr):
+            tables |= _tables_in_expr(expr.hi)
+        return tables
     if isinstance(expr, And) or isinstance(expr, Or):
         return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)
     if isinstance(expr, Not):
@@ -118,39 +125,36 @@ class Eq(Expr):
 
 
 @dataclass(frozen=True)
-class Lt(Expr):
-    left: object
-    right: object
+class InRange(Expr):
+    col: Expr
+    lo: object | None
+    lo_inc: bool
+    hi: object | None
+    hi_inc: bool
+
+    def __invert__(self) -> Expr:  # type: ignore[override]
+        parts: list[Expr] = []
+        if self.lo is not None:
+            parts.append(InRange(self.col, None, False, self.lo, not self.lo_inc))
+        if self.hi is not None:
+            parts.append(InRange(self.col, self.hi, not self.hi_inc, None, False))
+        if not parts:
+            return Not(self)
+        if len(parts) == 1:
+            return parts[0]
+        return Or(parts[0], parts[1])
 
     def eval(self, env: Dict[type[object], object]) -> bool:
-        return _value(self.left, env) < _value(self.right, env)
-
-
-@dataclass(frozen=True)
-class Le(Expr):
-    left: object
-    right: object
-
-    def eval(self, env: Dict[type[object], object]) -> bool:
-        return _value(self.left, env) <= _value(self.right, env)
-
-
-@dataclass(frozen=True)
-class Gt(Expr):
-    left: object
-    right: object
-
-    def eval(self, env: Dict[type[object], object]) -> bool:
-        return _value(self.left, env) > _value(self.right, env)
-
-
-@dataclass(frozen=True)
-class Ge(Expr):
-    left: object
-    right: object
-
-    def eval(self, env: Dict[type[object], object]) -> bool:
-        return _value(self.left, env) >= _value(self.right, env)
+        val = _value(self.col, env)
+        if self.lo is not None:
+            lo = _value(self.lo, env)
+            if val < lo or (val == lo and not self.lo_inc):
+                return False
+        if self.hi is not None:
+            hi = _value(self.hi, env)
+            if val > hi or (val == hi and not self.hi_inc):
+                return False
+        return True
 
 
 @dataclass(frozen=True)
@@ -186,10 +190,7 @@ __all__ = [
     "_value",
     "_tables_in_expr",
     "Eq",
-    "Lt",
-    "Le",
-    "Gt",
-    "Ge",
+    "InRange",
     "And",
     "Or",
     "Not",
