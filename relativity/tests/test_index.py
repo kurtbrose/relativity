@@ -178,3 +178,32 @@ def test_order_by_uses_tiebreaker():
         schema.add(s)
 
     assert list(schema.all(Student).order_by(Student.score)) == [c, a, b]
+
+
+def test_verify_and_rebuild_helpers():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+
+    idx = schema.index(Student.name)
+    a = Student("a")
+    b = Student("b")
+    schema.add(a)
+    schema.add(b)
+
+    schema.verify()
+
+    idx.data.pop("a")
+    with pytest.raises(AssertionError):
+        schema.verify()
+
+    schema.rebuild(idx)
+    schema.verify()
+
+    idx.data.clear()
+    with pytest.raises(AssertionError):
+        schema.verify()
+
+    schema.rebuild_all()
+    schema.verify()

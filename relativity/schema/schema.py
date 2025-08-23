@@ -197,6 +197,68 @@ class Schema:
         self._indices[expr] = idx
         return idx
 
+    def verify(self) -> None:
+        for idx in self._indices.values():
+            base = getattr(idx.table, "__table__", idx.table)
+            if isinstance(idx, OrderedIndex):
+                data: dict[object, list[int]] = {}
+                pairs: list[tuple[object, int]] = []
+                for row in self._tables.get(base, set()):
+                    val = idx.expr.eval({idx.table: row})
+                    row_id = self._row_ids[row]
+                    bucket = data.setdefault(val, [])
+                    bucket.append(row_id)
+                    if idx.unique and len(bucket) > 1:
+                        raise AssertionError("duplicate key for unique index")
+                    pairs.append((val, row_id))
+                for bucket in data.values():
+                    bucket.sort()
+                pairs.sort()
+                if idx.data != data or idx.keys != pairs:
+                    raise AssertionError("index out of sync")
+            else:
+                data: dict[object, set[Table]] = {}
+                for row in self._tables.get(base, set()):
+                    val = idx.expr.eval({idx.table: row})
+                    bucket = data.setdefault(val, set())
+                    if idx.unique and bucket:
+                        raise AssertionError("duplicate key for unique index")
+                    bucket.add(row)
+                if idx.data != data:
+                    raise AssertionError("index out of sync")
+
+    def rebuild(self, index: Index) -> None:
+        base = getattr(index.table, "__table__", index.table)
+        if isinstance(index, OrderedIndex):
+            data: dict[object, list[int]] = {}
+            pairs: list[tuple[object, int]] = []
+            for row in self._tables.get(base, set()):
+                val = index.expr.eval({index.table: row})
+                row_id = self._row_ids[row]
+                bucket = data.setdefault(val, [])
+                bucket.append(row_id)
+                if index.unique and len(bucket) > 1:
+                    raise KeyError("non-unique value for unique index")
+                pairs.append((val, row_id))
+            for bucket in data.values():
+                bucket.sort()
+            pairs.sort()
+            index.data = data
+            index.keys = pairs
+        else:
+            data: dict[object, set[Table]] = {}
+            for row in self._tables.get(base, set()):
+                val = index.expr.eval({index.table: row})
+                bucket = data.setdefault(val, set())
+                if index.unique and bucket:
+                    raise KeyError("non-unique value for unique index")
+                bucket.add(row)
+            index.data = data
+
+    def rebuild_all(self) -> None:
+        for idx in list(self._indices.values()):
+            self.rebuild(idx)
+
     def replace(self, row: Table, **changes: object) -> Table:
         row_id = self._row_ids[row]
         new_row = dataclasses.replace(row, **changes)
