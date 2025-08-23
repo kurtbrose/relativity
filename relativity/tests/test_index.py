@@ -1,6 +1,6 @@
 import pytest
 
-from relativity.schema import Schema, Table, Eq, Gt, Tuple
+from relativity.schema import Schema, Table, Eq, InRange, Tuple
 
 
 class CountingExpr(Eq):
@@ -13,10 +13,10 @@ class CountingExpr(Eq):
         return super().eval(env)
 
 
-class CountingGt(Gt):
+class CountingRange(InRange):
     def __init__(self, base):
         object.__setattr__(self, "count", 0)
-        super().__init__(base.left, base.right)
+        super().__init__(base.col, base.lo, base.lo_inc, base.hi, base.hi_inc)
 
     def eval(self, env):
         object.__setattr__(self, "count", self.count + 1)
@@ -114,15 +114,38 @@ def test_range_query_planner_uses_index():
     for i in range(4):
         schema.add(Student(str(i), i))
 
-    expr = CountingGt(Student.score > 1)
+    expr = CountingRange(Student.score > 1)
     list(schema.all(Student).filter(expr))
     assert expr.count == 4
 
     schema.ordered_index(Student.score)
 
-    expr2 = CountingGt(Student.score > 1)
+    expr2 = CountingRange(Student.score > 1)
     list(schema.all(Student).filter(expr2))
     assert expr2.count == 0
+
+
+def test_range_query_planner_merges_bounds():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+        score: int
+
+    a = Student("a", 0)
+    b = Student("b", 1)
+    c = Student("c", 2)
+    d = Student("d", 3)
+    for s in (a, b, c, d):
+        schema.add(s)
+
+    schema.ordered_index(Student.score)
+
+    gt = CountingRange(Student.score > 0)
+    lt = CountingRange(Student.score < 3)
+    assert list(schema.all(Student).filter(gt, lt)) == [b, c]
+    assert gt.count == 0
+    assert lt.count == 0
 
 
 def test_composite_index_queries():
