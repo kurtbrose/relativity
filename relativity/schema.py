@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import ClassVar, Iterator
-from typing import dataclass_transform
+
+try:  # pragma: no cover - for Python <3.11
+    from typing import dataclass_transform
+except ImportError:  # pragma: no cover - fallback for old Python
+    try:
+        from typing_extensions import dataclass_transform
+    except ImportError:  # pragma: no cover - minimal stub
+        def dataclass_transform(*args, **kwargs):  # type: ignore[unused-argument]
+            def decorator(cls):
+                return cls
+
+            return decorator
 
 
 @dataclass_transform()

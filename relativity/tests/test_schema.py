@@ -1,4 +1,5 @@
 import dataclasses
+import importlib
 
 import pytest
 
@@ -45,3 +46,24 @@ def test_shim_removed_from_mro():
         name: str
 
     assert Student.__mro__ == (Student, Table, object)
+
+
+def test_dataclass_transform_fallback(monkeypatch):
+    import typing
+    import relativity.schema as schema_module
+
+    monkeypatch.delattr(typing, "dataclass_transform", raising=False)
+    schema_module = importlib.reload(schema_module)
+
+    schema = schema_module.Schema()
+
+    class Student(schema.Table):
+        name: str
+
+    alice = Student("alice")
+    assert dataclasses.is_dataclass(alice)
+    schema.add(alice)
+    assert list(schema.all(Student)) == [alice]
+
+    monkeypatch.undo()
+    importlib.reload(schema_module)
