@@ -41,6 +41,7 @@ class Table:
 class Schema:
     def __init__(self) -> None:
         self._tables: dict[type[object], dict[int, object]] = {}
+        self._indices: dict[Expr, tuple[type[object], dict[object, set[object]]]] = {}
 
     @property
     def Table(self) -> type[Table]:
@@ -55,29 +56,40 @@ class Schema:
 
     def add(self, row: object) -> None:
         self._tables[type(row)][id(row)] = row
+        for expr, (tbl, idx) in self._indices.items():
+            base = getattr(tbl, "__table__", tbl)
+            if base is type(row):
+                val = expr.eval({tbl: row})
+                idx.setdefault(val, set()).add(row)
 
     def remove(self, row: object) -> None:
         del self._tables[type(row)][id(row)]
+        for expr, (tbl, idx) in self._indices.items():
+            base = getattr(tbl, "__table__", tbl)
+            if base is type(row):
+                val = expr.eval({tbl: row})
+                bucket = idx.get(val)
+                if bucket is not None:
+                    bucket.discard(row)
+                    if not bucket:
+                        idx.pop(val, None)
 
     def all(self, *tables: type[object]) -> "RowStream":
         if not tables:
             raise TypeError("Schema.all() requires at least one table")
         return RowStream(self, tables)
 
-
-class Column:
-    def __init__(self, table: type[object], name: str) -> None:
-        self.table = table
-        self.name = name
-
-    def __get__(self, inst: object | None, owner: type[object]) -> object:
-        if inst is None:
-            return self
-        return inst.__dict__[self.name]
-
-    def __eq__(self, other: object) -> "Eq":
-        return Eq(self, other)
-
+    def index(self, expr: Expr) -> None:
+        tables = _tables_in_expr(expr)
+        if len(tables) != 1:
+            raise TypeError("index expressions must reference exactly one table")
+        tbl = tables.pop()
+        base = getattr(tbl, "__table__", tbl)
+        data: dict[object, set[object]] = {}
+        for row in self._tables.get(base, {}).values():
+            val = expr.eval({tbl: row})
+            data.setdefault(val, set()).add(row)
+        self._indices[expr] = (tbl, data)
 
 class Expr:
     def __and__(self, other: "Expr") -> "Expr":
@@ -89,47 +101,76 @@ class Expr:
     def __invert__(self) -> "Expr":
         return Not(self)
 
-    def eval(self, env: dict[type[object], object]) -> bool:  # pragma: no cover - abstract
+    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - abstract
         raise NotImplementedError
 
 
+@dataclass(frozen=True)
+class Column(Expr):
+    table: type[object]
+    name: str
+
+    def __get__(self, inst: object | None, owner: type[object]) -> object:
+        if inst is None:
+            return self
+        return inst.__dict__[self.name]
+
+    def __eq__(self, other: object) -> "Eq":  # type: ignore[override]
+        return Eq(self, other)
+
+    def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - trivial
+        row = env[self.table]
+        return getattr(row, self.name)
+
+
 def _value(val: object, env: dict[type[object], object]) -> object:
-    if isinstance(val, Column):
-        row = env[val.table]
-        return getattr(row, val.name)
+    if isinstance(val, Expr):
+        return val.eval(env)
     return val
 
 
+def _tables_in_expr(expr: Expr) -> set[type[object]]:
+    if isinstance(expr, Column):
+        return {expr.table}
+    if isinstance(expr, Eq):
+        return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)
+    if isinstance(expr, And) or isinstance(expr, Or):
+        return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)  # type: ignore[arg-type]
+    if isinstance(expr, Not):
+        return _tables_in_expr(expr.expr)
+    return set()
+
+
+@dataclass(frozen=True)
 class Eq(Expr):
-    def __init__(self, left: object, right: object) -> None:
-        self.left = left
-        self.right = right
+    left: object
+    right: object
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return _value(self.left, env) == _value(self.right, env)
 
 
+@dataclass(frozen=True)
 class And(Expr):
-    def __init__(self, left: Expr, right: Expr) -> None:
-        self.left = left
-        self.right = right
+    left: Expr
+    right: Expr
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return self.left.eval(env) and self.right.eval(env)
 
 
+@dataclass(frozen=True)
 class Or(Expr):
-    def __init__(self, left: Expr, right: Expr) -> None:
-        self.left = left
-        self.right = right
+    left: Expr
+    right: Expr
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return self.left.eval(env) or self.right.eval(env)
 
 
+@dataclass(frozen=True)
 class Not(Expr):
-    def __init__(self, expr: Expr) -> None:
-        self.expr = expr
+    expr: Expr
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return not self.expr.eval(env)
@@ -145,13 +186,43 @@ class RowStream(Iterable[object]):
         return RowStream(self._schema, self._tables, self._preds + list(exprs))
 
     def __iter__(self) -> Iterator[object]:
+        preds = list(self._preds)
         sources = []
         for t in self._tables:
             base = getattr(t, "__table__", t)
-            sources.append(list(self._schema._tables.get(base, {}).values()))
+            source = None
+            for pred in list(preds):
+                used = False
+                if isinstance(pred, Eq):
+                    pairs = [(pred.left, pred.right), (pred.right, pred.left)]
+                    for expr, other in pairs:
+                        idx = self._schema._indices.get(expr)
+                        if idx:
+                            tbl, rows = idx
+                            idx_base = getattr(tbl, "__table__", tbl)
+                            if idx_base is base and not isinstance(other, Expr):
+                                bucket = rows.get(other, set())
+                                source = list(bucket)
+                                preds.remove(pred)
+                                used = True
+                                break
+                    if used:
+                        break
+                idx = self._schema._indices.get(pred)
+                if idx:
+                    tbl, rows = idx
+                    idx_base = getattr(tbl, "__table__", tbl)
+                    if idx_base is base:
+                        bucket = rows.get(True, set())
+                        source = list(bucket)
+                        preds.remove(pred)
+                        break
+            if source is None:
+                source = list(self._schema._tables.get(base, {}).values())
+            sources.append(source)
         for combo in product(*sources):
             env = {t: r for t, r in zip(self._tables, combo)}
-            if all(pred.eval(env) for pred in self._preds):
+            if all(pred.eval(env) for pred in preds):
                 yield combo if len(combo) > 1 else combo[0]
 
 
