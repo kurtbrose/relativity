@@ -9,7 +9,7 @@ from .expr import Expr
 class Index:
     expr: Expr
     table: type["Table"]
-    data: dict[object, set["Table"]]
+    data: dict[object, set[int]]
     unique: bool = False
     where: Expr | None = None
 

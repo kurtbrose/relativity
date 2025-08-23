@@ -106,7 +106,7 @@ class Schema:
                 insort(bucket, row_id)
             else:
                 bucket = idx.data.setdefault(val, set())
-                bucket.add(row)
+                bucket.add(row_id)
 
     def remove(self, row: Table, *, check_refs: bool = True) -> None:
         row_id = self._row_ids[row]
@@ -145,7 +145,7 @@ class Schema:
                         if pos < len(idx.keys) and idx.keys[pos] == (val, row_id2):
                             idx.keys.pop(pos)
                     else:
-                        bucket.discard(row)
+                        bucket.discard(row_id)
                         if not bucket:
                             idx.data.pop(val, None)
 
@@ -176,13 +176,14 @@ class Schema:
             raise TypeError("index expressions must reference exactly one table")
         tbl = tables.pop()
         base = getattr(tbl, "__table__", tbl)
-        data: dict[object, set[Table]] = {}
+        data: dict[object, set[int]] = {}
         for row in self._tables.get(base, set()):
             if where is not None and not where.eval({tbl: row}):
                 continue
             val = expr.eval({tbl: row})
+            row_id = self._row_ids[row]
             bucket = data.setdefault(val, set())
-            bucket.add(row)
+            bucket.add(row_id)
             if unique and len(bucket) > 1:
                 raise KeyError("non-unique value for unique index")
         idx = Index(expr, tbl, data, unique, where)
@@ -241,15 +242,16 @@ class Schema:
                 if idx.data != data or idx.keys != pairs:
                     raise AssertionError("index out of sync")
             else:
-                data: dict[object, set[Table]] = {}
+                data: dict[object, set[int]] = {}
                 for row in self._tables.get(base, set()):
                     if idx.where is not None and not idx.where.eval({idx.table: row}):
                         continue
                     val = idx.expr.eval({idx.table: row})
+                    row_id = self._row_ids[row]
                     bucket = data.setdefault(val, set())
                     if idx.unique and bucket:
                         raise AssertionError("duplicate key for unique index")
-                    bucket.add(row)
+                    bucket.add(row_id)
                 if idx.data != data:
                     raise AssertionError("index out of sync")
 
@@ -274,15 +276,16 @@ class Schema:
             index.data = data
             index.keys = pairs
         else:
-            data: dict[object, set[Table]] = {}
+            data: dict[object, set[int]] = {}
             for row in self._tables.get(base, set()):
                 if index.where is not None and not index.where.eval({index.table: row}):
                     continue
                 val = index.expr.eval({index.table: row})
+                row_id = self._row_ids[row]
                 bucket = data.setdefault(val, set())
                 if index.unique and bucket:
                     raise KeyError("non-unique value for unique index")
-                bucket.add(row)
+                bucket.add(row_id)
             index.data = data
 
     def rebuild_all(self) -> None:
@@ -292,22 +295,58 @@ class Schema:
     def replace(self, row: Table, **changes: object) -> Table:
         row_id = self._row_ids[row]
         new_row = dataclasses.replace(row, **changes)
+        updates: list[tuple[Index, object | None, object | None]] = []
         for idx in self._indices.values():
             base = getattr(idx.table, "__table__", idx.table)
             if base is type(row):
-                if idx.where is not None and not idx.where.eval({idx.table: new_row}):
+                old_match = idx.where is None or idx.where.eval({idx.table: row})
+                new_match = idx.where is None or idx.where.eval({idx.table: new_row})
+                old_val = idx.expr.eval({idx.table: row}) if old_match else None
+                new_val = idx.expr.eval({idx.table: new_row}) if new_match else None
+                if old_match and new_match and old_val == new_val:
                     continue
-                val = idx.expr.eval({idx.table: new_row})
-                if isinstance(idx, OrderedIndex):
-                    bucket = idx.data.get(val, [])
-                    if idx.unique and bucket and not (len(bucket) == 1 and bucket[0] == row_id):
-                        raise KeyError("duplicate key for unique index")
-                else:
-                    bucket = idx.data.get(val, set())
-                    if idx.unique and bucket and bucket != {row}:
-                        raise KeyError("duplicate key for unique index")
-        self.remove(row, check_refs=False)
-        self.add(new_row, row_id)
+                if new_match:
+                    if isinstance(idx, OrderedIndex):
+                        bucket = idx.data.get(new_val, [])
+                        if idx.unique and bucket and not (len(bucket) == 1 and bucket[0] == row_id):
+                            raise KeyError("duplicate key for unique index")
+                    else:
+                        bucket = idx.data.get(new_val, set())
+                        if idx.unique and bucket and not (len(bucket) == 1 and row_id in bucket):
+                            raise KeyError("duplicate key for unique index")
+                updates.append((idx, old_val if old_match else None, new_val if new_match else None))
+
+        self._tables[type(row)].remove(row)
+        self._tables[type(row)].add(new_row)
+        self._all_rows[row_id] = new_row
+        del self._row_ids[row]
+        self._row_ids[new_row] = row_id
+
+        for idx, old_val, new_val in updates:
+            if isinstance(idx, OrderedIndex):
+                if old_val is not None:
+                    bucket = idx.data.get(old_val, [])
+                    pos = bisect_left(bucket, row_id)
+                    if pos < len(bucket) and bucket[pos] == row_id:
+                        bucket.pop(pos)
+                        if not bucket:
+                            idx.data.pop(old_val, None)
+                    pos = bisect_left(idx.keys, (old_val, row_id))
+                    if pos < len(idx.keys) and idx.keys[pos] == (old_val, row_id):
+                        idx.keys.pop(pos)
+                if new_val is not None:
+                    insort(idx.data.setdefault(new_val, []), row_id)
+                    insort(idx.keys, (new_val, row_id))
+            else:
+                if old_val is not None:
+                    bucket = idx.data.get(old_val)
+                    if bucket is not None:
+                        bucket.discard(row_id)
+                        if not bucket:
+                            idx.data.pop(old_val, None)
+                if new_val is not None:
+                    idx.data.setdefault(new_val, set()).add(row_id)
+
         return new_row
 
 
