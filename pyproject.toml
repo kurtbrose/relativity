@@ -25,7 +25,12 @@ Homepage = "https://github.com/kurtbrose/relativity"
 Documentation = "https://relativity.readthedocs.io"
 
 [tool.setuptools.packages.find]
-include = ["relativity", "relativity.tests"]
+# Include the main package and all of its subpackages so that modules like
+# ``relativity.schema`` are present when the project is installed. Previously
+# only ``relativity`` and ``relativity.tests`` were included explicitly, which
+# caused subpackages added during the schema refactor to be omitted from the
+# distribution and broke imports at runtime.
+include = ["relativity", "relativity.*"]
 
 [tool.setuptools]
 include-package-data = true
