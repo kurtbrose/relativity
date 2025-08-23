@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import product
+from bisect import bisect_left, bisect_right, insort
 from typing import ClassVar, Iterable, Iterator, Sequence
 
 try:  # pragma: no cover - for Python <3.11
@@ -47,6 +48,11 @@ class Index:
     unique: bool = False
 
 
+@dataclass
+class OrderedIndex(Index):
+    keys: list[object] = field(default_factory=list)
+
+
 class Schema:
     def __init__(self) -> None:
         self._tables: dict[type[object], dict[int, object]] = {}
@@ -74,7 +80,10 @@ class Schema:
                 vals.append((idx, val))
         self._tables[type(row)][id(row)] = row
         for idx, val in vals:
-            idx.data.setdefault(val, set()).add(row)
+            if isinstance(idx, OrderedIndex) and val not in idx.data:
+                insort(idx.keys, val)
+            bucket = idx.data.setdefault(val, set())
+            bucket.add(row)
 
     def remove(self, row: object) -> None:
         del self._tables[type(row)][id(row)]
@@ -87,6 +96,10 @@ class Schema:
                     bucket.discard(row)
                     if not bucket:
                         idx.data.pop(val, None)
+                        if isinstance(idx, OrderedIndex):
+                            pos = bisect_left(idx.keys, val)
+                            if pos < len(idx.keys) and idx.keys[pos] == val:
+                                idx.keys.pop(pos)
 
     def all(self, *tables: type[object]) -> "RowStream":
         if not tables:
@@ -107,6 +120,24 @@ class Schema:
             if unique and len(bucket) > 1:
                 raise KeyError("non-unique value for unique index")
         idx = Index(expr, tbl, data, unique)
+        self._indices[expr] = idx
+        return idx
+
+    def ordered_index(self, expr: Expr, *, unique: bool = False) -> OrderedIndex:
+        tables = _tables_in_expr(expr)
+        if len(tables) != 1:
+            raise TypeError("index expressions must reference exactly one table")
+        tbl = tables.pop()
+        base = getattr(tbl, "__table__", tbl)
+        data: dict[object, set[object]] = {}
+        for row in self._tables.get(base, {}).values():
+            val = expr.eval({tbl: row})
+            bucket = data.setdefault(val, set())
+            bucket.add(row)
+            if unique and len(bucket) > 1:
+                raise KeyError("non-unique value for unique index")
+        keys = sorted(data.keys())
+        idx = OrderedIndex(expr, tbl, data, unique=unique, keys=keys)
         self._indices[expr] = idx
         return idx
 
@@ -150,6 +181,18 @@ class Column(Expr):
     def __eq__(self, other: object) -> "Eq":  # type: ignore[override]
         return Eq(self, other)
 
+    def __lt__(self, other: object) -> "Lt":  # type: ignore[override]
+        return Lt(self, other)
+
+    def __le__(self, other: object) -> "Le":  # type: ignore[override]
+        return Le(self, other)
+
+    def __gt__(self, other: object) -> "Gt":  # type: ignore[override]
+        return Gt(self, other)
+
+    def __ge__(self, other: object) -> "Ge":  # type: ignore[override]
+        return Ge(self, other)
+
     def eval(self, env: dict[type[object], object]) -> object:  # pragma: no cover - trivial
         row = env[self.table]
         return getattr(row, self.name)
@@ -164,7 +207,7 @@ def _value(val: object, env: dict[type[object], object]) -> object:
 def _tables_in_expr(expr: Expr) -> set[type[object]]:
     if isinstance(expr, Column):
         return {expr.table}
-    if isinstance(expr, Eq):
+    if isinstance(expr, (Eq, Lt, Le, Gt, Ge)):
         return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)
     if isinstance(expr, And) or isinstance(expr, Or):
         return _tables_in_expr(expr.left) | _tables_in_expr(expr.right)  # type: ignore[arg-type]
@@ -180,6 +223,42 @@ class Eq(Expr):
 
     def eval(self, env: dict[type[object], object]) -> bool:
         return _value(self.left, env) == _value(self.right, env)
+
+
+@dataclass(frozen=True)
+class Lt(Expr):
+    left: object
+    right: object
+
+    def eval(self, env: dict[type[object], object]) -> bool:
+        return _value(self.left, env) < _value(self.right, env)
+
+
+@dataclass(frozen=True)
+class Le(Expr):
+    left: object
+    right: object
+
+    def eval(self, env: dict[type[object], object]) -> bool:
+        return _value(self.left, env) <= _value(self.right, env)
+
+
+@dataclass(frozen=True)
+class Gt(Expr):
+    left: object
+    right: object
+
+    def eval(self, env: dict[type[object], object]) -> bool:
+        return _value(self.left, env) > _value(self.right, env)
+
+
+@dataclass(frozen=True)
+class Ge(Expr):
+    left: object
+    right: object
+
+    def eval(self, env: dict[type[object], object]) -> bool:
+        return _value(self.left, env) >= _value(self.right, env)
 
 
 @dataclass(frozen=True)
@@ -238,6 +317,41 @@ class RowStream(Iterable[object]):
                                 preds.remove(pred)
                                 used = True
                                 break
+                    if used:
+                        break
+                if isinstance(pred, (Lt, Le, Gt, Ge)):
+                    comps: list[tuple[object, object, str]] = []
+                    if isinstance(pred, Lt):
+                        comps = [(pred.left, pred.right, "<"), (pred.right, pred.left, ">")]
+                    elif isinstance(pred, Le):
+                        comps = [(pred.left, pred.right, "<="), (pred.right, pred.left, ">=")]
+                    elif isinstance(pred, Gt):
+                        comps = [(pred.left, pred.right, ">"), (pred.right, pred.left, "<")]
+                    elif isinstance(pred, Ge):
+                        comps = [(pred.left, pred.right, ">="), (pred.right, pred.left, "<=")]
+                    for expr, other, op in comps:
+                        idx = self._schema._indices.get(expr)
+                        if isinstance(idx, OrderedIndex) and not isinstance(other, Expr):
+                            keys, rows = idx.keys, idx.data
+                            if op == "<":
+                                pos = bisect_left(keys, other)
+                                sel = keys[:pos]
+                            elif op == "<=":
+                                pos = bisect_right(keys, other)
+                                sel = keys[:pos]
+                            elif op == ">":
+                                pos = bisect_right(keys, other)
+                                sel = keys[pos:]
+                            else:  # >=
+                                pos = bisect_left(keys, other)
+                                sel = keys[pos:]
+                            bucket: list[object] = []
+                            for k in sel:
+                                bucket.extend(rows.get(k, set()))
+                            source = bucket
+                            preds.remove(pred)
+                            used = True
+                            break
                     if used:
                         break
                 idx = self._schema._indices.get(pred)
