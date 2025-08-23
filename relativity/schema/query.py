@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from bisect import bisect_left, bisect_right
-from itertools import product
 from typing import Any, Iterable, Iterator, Sequence
 import sys
 
-from .expr import Expr, Eq, InRange, _value
+from .expr import Expr, Eq, InRange, Tuple, _value
 from .index import OrderedIndex
 if True:  # pragma: no cover - for type checking without runtime import
     from .schema import Schema, Table  # type: ignore
@@ -19,7 +18,7 @@ class SourcePlan:
 
 
 class Scan:
-    def run(self, schema: "Schema") -> list[object]:
+    def run(self, schema: "Schema", env: dict[type["Table"], object] | None = None) -> list[object]:
         raise NotImplementedError
 
 
@@ -27,7 +26,7 @@ class Scan:
 class FullScan(Scan):
     base: type
 
-    def run(self, s: "Schema") -> list[object]:
+    def run(self, s: "Schema", env: dict[type["Table"], object] | None = None) -> list[object]:
         row_ids = s._row_ids
         return sorted(s._tables.get(self.base, set()), key=row_ids.__getitem__)
 
@@ -39,13 +38,19 @@ class EqScan(Scan):
     key: Any
     ordered: bool
 
-    def run(self, s: "Schema") -> list[object]:
+    def run(self, s: "Schema", env: dict[type["Table"], object] | None = None) -> list[object]:
         row_ids = s._row_ids
         idx = s._indices[self.index_expr]
+        key_env = env or {}
+        key = (
+            tuple(_value(k, key_env) for k in self.key)
+            if isinstance(self.key, tuple)
+            else _value(self.key, key_env)
+        )
         if self.ordered:
-            ids = idx.data.get(self.key, [])
+            ids = idx.data.get(key, [])
             return [s._all_rows[i] for i in ids]
-        bucket = idx.data.get(self.key, set())
+        bucket = idx.data.get(key, set())
         return sorted(bucket, key=row_ids.__getitem__)
 
 
@@ -56,7 +61,7 @@ class RangeScan(Scan):
     lo: tuple[Any, int] | None
     hi: tuple[Any, int] | None
 
-    def run(self, s: "Schema") -> list[object]:
+    def run(self, s: "Schema", env: dict[type["Table"], object] | None = None) -> list[object]:
         keys = self.index.keys
         lo_pos = 0 if self.lo is None else bisect_left(keys, self.lo)
         hi_pos = len(keys) if self.hi is None else bisect_right(keys, self.hi)
@@ -68,7 +73,7 @@ class BoolScan(Scan):
     base: type
     index_expr: Expr
 
-    def run(self, s: "Schema") -> list[object]:
+    def run(self, s: "Schema", env: dict[type["Table"], object] | None = None) -> list[object]:
         row_ids = s._row_ids
         idx = s._indices[self.index_expr]
         bucket = idx.data.get(True, set())
@@ -133,15 +138,45 @@ class Planner:
         return plans, remaining
 
     def _pick_scan_for_table(self, base: type, preds: list[Expr]) -> Scan:
+        # Check for composite indexes matching multiple equality predicates
+        for idx_expr, idx in self.s._indices.items():
+            if not self._same_base(idx.table, base):
+                continue
+            if not isinstance(idx_expr, Tuple):
+                continue
+            keys: list[object] = []
+            used: list[Expr] = []
+            for sub in idx_expr.exprs:
+                match = False
+                for pred in preds:
+                    if isinstance(pred, Eq):
+                        for expr, other in ((pred.left, pred.right), (pred.right, pred.left)):
+                            if expr is sub:
+                                keys.append(other)
+                                used.append(pred)
+                                match = True
+                                break
+                        if match:
+                            break
+                if not match:
+                    break
+            else:
+                for p in used:
+                    preds.remove(p)
+                ordered = isinstance(idx, OrderedIndex)
+                return EqScan(base, idx_expr, tuple(keys), ordered)
+
         for pred in list(preds):
             if isinstance(pred, Eq):
                 for expr, other in ((pred.left, pred.right), (pred.right, pred.left)):
                     idx = self.s._indices.get(expr)
-                    if idx and self._same_base(idx.table, base) and not isinstance(other, Expr) and not isinstance(other, type):
-                        key = _value(other, {})
+                    if idx and self._same_base(idx.table, base):
                         ordered = isinstance(idx, OrderedIndex)
                         preds.remove(pred)
-                        return EqScan(base, expr, key, ordered)
+                        if not isinstance(other, Expr) and not isinstance(other, type):
+                            key = _value(other, {})
+                            return EqScan(base, expr, key, ordered)
+                        return EqScan(base, expr, other, ordered)
         for pred in list(preds):
             r = self._range_scan_for_pred(base, pred)
             if r is not None:
@@ -203,15 +238,23 @@ class RowStream(Iterable[object]):
     def __iter__(self) -> Iterator[object]:
         planner = Planner(self._schema)
         plans, residual = planner.plan(self._tables, _normalize(self._preds))
-
-        sources: list[list[object]] = [p.scan.run(self._schema) for p in plans]
-
         row_ids = self._schema._row_ids
         results: list[object | tuple[object, ...]] = []
-        for combo in product(*sources):
-            env = {t: r for t, r in zip(self._tables, combo)}
-            if all(pred.eval(env) for pred in residual):
-                results.append(combo if len(combo) > 1 else combo[0])
+        env: dict[type["Table"], object] = {}
+
+        def backtrack(i: int, combo: tuple[object, ...]) -> None:
+            if i == len(plans):
+                if all(pred.eval(env) for pred in residual):
+                    results.append(combo if len(combo) > 1 else combo[0])
+                return
+            plan = plans[i]
+            rows = plan.scan.run(self._schema, env)
+            for row in rows:
+                env[plan.table] = row
+                backtrack(i + 1, combo + (row,))
+            env.pop(plan.table, None)
+
+        backtrack(0, tuple())
 
         if self._order:
             key_expr, use_id = self._order

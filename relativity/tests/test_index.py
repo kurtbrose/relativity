@@ -1,6 +1,6 @@
 import pytest
 
-from relativity.schema import Schema, Table, Eq, InRange, Tuple
+from relativity.schema import Schema, Table, Eq, InRange, Tuple, Ref
 
 
 class CountingExpr(Eq):
@@ -230,3 +230,51 @@ def test_verify_and_rebuild_helpers():
 
     schema.rebuild_all()
     schema.verify()
+
+
+def test_composite_index_planner_uses_multiple_eq():
+    schema = Schema()
+
+    class Student(schema.Table):
+        first: str
+        last: str
+
+    schema.index(Student.first, Student.last)
+
+    a = Student("a", "x")
+    b = Student("a", "y")
+    schema.add(a)
+    schema.add(b)
+
+    expr1 = CountingExpr(Student.first == "a")
+    expr2 = CountingExpr(Student.last == "x")
+    assert list(schema.all(Student).filter(expr1, expr2)) == [a]
+    assert expr1.count == 0
+    assert expr2.count == 0
+
+
+def test_equality_join_uses_index():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+
+    class Enrollment(schema.Table):
+        student: Ref[Student]
+
+    schema.index(Enrollment.student)
+
+    alice = Student("alice")
+    bob = Student("bob")
+    schema.add(alice)
+    schema.add(bob)
+
+    enr1 = Enrollment(schema.ref(alice))
+    enr2 = Enrollment(schema.ref(bob))
+    schema.add(enr1)
+    schema.add(enr2)
+
+    join_pred = CountingExpr(Enrollment.student == Student)
+    res = list(schema.all(Student, Enrollment).filter(join_pred))
+    assert res == [(alice, enr1), (bob, enr2)]
+    assert join_pred.count == 0
