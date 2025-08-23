@@ -88,3 +88,35 @@ def test_all_filter_and_alias():
     assert all(len(pair) == 2 for pair in pairs)
 
     assert list(schema.all(Student).filter(Student.parent == "p1")) == [a, c]
+
+
+def test_replace_swaps_fields_and_updates_index():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+
+    s = Student("a")
+    schema.add(s)
+    schema.index(Student.name, unique=True)
+
+    s2 = schema.replace(s, name="b")
+    assert s2.name == "b"
+    assert list(schema.all(Student)) == [s2]
+    assert list(schema.all(Student).filter(Student.name == "b")) == [s2]
+
+
+def test_replace_respects_unique_index():
+    schema = Schema()
+
+    class Student(schema.Table):
+        name: str
+
+    schema.index(Student.name, unique=True)
+    a = Student("a")
+    b = Student("b")
+    schema.add(a)
+    schema.add(b)
+    with pytest.raises(KeyError):
+        schema.replace(a, name="b")
+    assert set(schema.all(Student)) == {a, b}
