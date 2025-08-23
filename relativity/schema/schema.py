@@ -152,6 +152,17 @@ class Schema:
         return RowStream(self, tables)
 
     def index(self, *exprs: Expr, unique: bool = False) -> Index:
+        """Create an index on one or more expressions.
+
+        Multiple expressions are combined into :class:`Tuple`, allowing
+        composite indexes.  Such indexes may be queried either with a
+        matching ``Tuple`` expression or with separate equality predicates
+        on each component (``a == x`` and ``b == y``) which the planner
+        now treats as a single probe.
+
+        ``unique`` enforces that the indexed expression yields distinct
+        values for all rows.
+        """
         if not exprs:
             raise TypeError("Schema.index() requires at least one expression")
         expr = exprs[0] if len(exprs) == 1 else Tuple(*exprs)
